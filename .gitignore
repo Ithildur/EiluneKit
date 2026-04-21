@@ -1,0 +1,15 @@
+# Go build output
+bin/
+dist/
+coverage/
+*.out
+
+# IDE/editor
+.idea/
+.vscode/
+.DS_Store
+.codex/
+AGENTS.*
+
+# Agent
+AGENTS.*
