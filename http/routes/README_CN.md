@@ -8,7 +8,7 @@
 
 当路由来自代码生成、需要从其他 router 适配，或需要直接控制 `[]routes.Route` 时，使用更底层的 `routes.Route` 和 `routes.Mount`。`Blueprint` 构建的是同一套路由数据，不是另一套路由系统。
 
-`Blueprint` 只有一种路由注册形状：方法接收 `http.Handler`。普通 handler 函数用标准转换 `http.HandlerFunc(fn)`。包里故意不暴露 `GetFunc` 这类 helper；两套等价写法只会让路由树更难读。
+`Blueprint` 使用 handler-required（必填 handler）的注册形状：方法接收 `path`、`summary`、通过 `routes.Func` 或 `routes.Handler` 构造的必填 handler，然后才是路由选项。普通 `http.HandlerFunc` 和方法值优先用 `routes.Func(fn)`；只有中间件或适配器已经返回 `http.Handler` 时才用 `routes.Handler(h)`。
 
 ## Blueprint
 
@@ -19,8 +19,8 @@ updater := routes.NewBlueprint(
 )
 updater.Post(
 	"/refresh",
-	http.HandlerFunc(refresh),
-	routes.Summary("Refresh updater state"),
+	"Refresh updater state",
+	routes.Func(refresh),
 )
 
 api := routes.NewBlueprint()

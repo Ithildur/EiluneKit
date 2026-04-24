@@ -106,39 +106,40 @@ func (h *Handler) Routes() []routes.Route {
 	authRoutes := routes.NewBlueprint(routes.DefaultTags("auth"))
 	authRoutes.Post(
 		"/login",
-		middleware.JSONOnly(stdhttp.HandlerFunc(h.handleLogin)),
-		routes.Summary("Login"),
+		"Login",
+		routes.Func(h.handleLogin),
 		routes.Auth(routes.AuthNone),
 		routes.Use(loginChain...),
+		routes.Use(middleware.RequireJSONBody),
 	)
 	authRoutes.Post(
 		"/refresh",
-		stdhttp.HandlerFunc(h.handleRefresh),
-		routes.Summary("Refresh access token"),
+		"Refresh access token",
+		routes.Func(h.handleRefresh),
 		routes.Auth(routes.AuthRefreshCookie),
 	)
 	authRoutes.Post(
 		"/logout",
-		stdhttp.HandlerFunc(h.handleLogout),
-		routes.Summary("Logout"),
+		"Logout",
+		routes.Func(h.handleLogout),
 		routes.Auth(routes.AuthRefreshCookie),
 	)
 
 	sessions := routes.NewBlueprint(routes.DefaultAuth(routes.AuthBearerRequired))
 	sessions.Delete(
 		"/current",
-		stdhttp.HandlerFunc(h.handleDeleteCurrentSession),
-		routes.Summary("Revoke current session"),
+		"Revoke current session",
+		routes.Func(h.handleDeleteCurrentSession),
 	)
 	sessions.Delete(
 		"/",
-		stdhttp.HandlerFunc(h.handleDeleteAllSessions),
-		routes.Summary("Revoke all sessions for current user"),
+		"Revoke all sessions for current user",
+		routes.Func(h.handleDeleteAllSessions),
 	)
 	sessions.Delete(
 		"/{sid}",
-		stdhttp.HandlerFunc(h.handleDeleteSession),
-		routes.Summary("Revoke a specific session for current user"),
+		"Revoke a specific session for current user",
+		routes.Func(h.handleDeleteSession),
 	)
 	authRoutes.Include("/sessions", sessions)
 

@@ -16,10 +16,10 @@ func TestBlueprintIncludesChildRoutes(t *testing.T) {
 	child := routes.NewBlueprint()
 	child.Get(
 		"/status",
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		"Get status",
+		routes.Func(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		}),
-		routes.Summary("Get status"),
 		routes.Tags("child"),
 		routes.Auth(routes.AuthBearerOptional),
 	)
@@ -100,17 +100,18 @@ func TestBlueprintDefaults(t *testing.T) {
 	)
 	blueprint.Get(
 		"/users",
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		"List users",
+		routes.Func(func(w http.ResponseWriter, r *http.Request) {
 			calls = append(calls, "handler")
 			w.WriteHeader(http.StatusNoContent)
 		}),
-		routes.Summary("List users"),
 		routes.Tags("users"),
 		routes.Use(routeMW),
 	)
 	blueprint.Get(
 		"/public",
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		"",
+		routes.Func(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		}),
 		routes.Auth(routes.AuthNone),
@@ -150,7 +151,7 @@ func TestBlueprintDefaults(t *testing.T) {
 
 func TestBlueprintIncludeAuthOverridesChildRoutes(t *testing.T) {
 	child := routes.NewBlueprint()
-	child.Get("/public", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), routes.Auth(routes.AuthNone))
+	child.Get("/public", "", routes.Func(func(w http.ResponseWriter, r *http.Request) {}), routes.Auth(routes.AuthNone))
 
 	parent := routes.NewBlueprint()
 	parent.Include("/child", child, routes.IncludeAuth(routes.AuthBearerRequired))
@@ -311,6 +312,35 @@ func TestMountRejectsNilChiRouter(t *testing.T) {
 	}
 }
 
+func TestHandlerRejectsNilHandlers(t *testing.T) {
+	mustPanic(t, func() {
+		routes.Handler(nil)
+	})
+	mustPanic(t, func() {
+		routes.Func(nil)
+	})
+
+	var h *typedNilHandler
+	mustPanic(t, func() {
+		routes.Handler(h)
+	})
+}
+
+func TestMountRejectsTypedNilHandler(t *testing.T) {
+	var h *typedNilHandler
+
+	err := routes.Mount(chi.NewRouter(), "", []routes.Route{
+		{
+			Method:  http.MethodGet,
+			Path:    "/health",
+			Handler: h,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected nil handler error")
+	}
+}
+
 func mustPanic(t *testing.T, fn func()) {
 	t.Helper()
 	defer func() {
@@ -320,3 +350,7 @@ func mustPanic(t *testing.T, fn func()) {
 	}()
 	fn()
 }
+
+type typedNilHandler struct{}
+
+func (*typedNilHandler) ServeHTTP(http.ResponseWriter, *http.Request) {}

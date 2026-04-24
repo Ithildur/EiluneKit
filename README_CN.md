@@ -34,7 +34,7 @@ go get github.com/Ithildur/EiluneKit@latest
 - `auth/session`：cookie 与 CSRF 辅助
 - `auth/store`：memory 与 Redis 的 session / token 状态存储
 - `http/decoder`：JSON 请求解码辅助
-- `http/middleware`：JSONOnly、访问日志、限流和 404/405 辅助
+- `http/middleware`：RequireJSONBody、访问日志、限流和 404/405 辅助
 - `http/response`：JSON 响应辅助
 - `http/routes`：声明式路由定义与导出辅助
 - `http/static`：静态文件与 SPA 挂载辅助

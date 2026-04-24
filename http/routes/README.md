@@ -8,7 +8,7 @@ Use `routes.Blueprint` in normal application code. It keeps handlers, metadata, 
 
 Use lower-level `routes.Route` and `routes.Mount` when routes are generated, adapted from another router, or when you need direct control over the route slice. `Blueprint` builds the same route data; it is not a second routing system.
 
-`Blueprint` has one route registration shape: methods take `http.Handler`. For plain handler functions, use the standard conversion `http.HandlerFunc(fn)`. The package intentionally does not expose `GetFunc` or similar helpers; two equivalent styles only make route trees harder to read.
+`Blueprint` uses a handler-required registration shape: methods take `path`, `summary`, a required handler built with `routes.Func` or `routes.Handler`, then route options. Prefer `routes.Func(fn)` for plain `http.HandlerFunc` values and methods; use `routes.Handler(h)` only when middleware or an adapter already returned an `http.Handler`.
 
 ## Blueprint
 
@@ -19,8 +19,8 @@ updater := routes.NewBlueprint(
 )
 updater.Post(
 	"/refresh",
-	http.HandlerFunc(refresh),
-	routes.Summary("Refresh updater state"),
+	"Refresh updater state",
+	routes.Func(refresh),
 )
 
 api := routes.NewBlueprint()

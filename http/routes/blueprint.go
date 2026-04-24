@@ -2,6 +2,7 @@ package routes
 
 import (
 	"net/http"
+	"reflect"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -60,12 +61,8 @@ func DefaultMiddleware(mw ...Middleware) BlueprintOption {
 // RouteOption 在路由加入前修改路由。
 type RouteOption func(*Route)
 
-// Summary sets Route.Summary.
-// Summary 设置 Route.Summary。
-func Summary(summary string) RouteOption {
-	return func(r *Route) {
-		r.Summary = summary
-	}
+type handlerSpec struct {
+	handler http.Handler
 }
 
 // Tags appends Route.Tags.
@@ -89,6 +86,46 @@ func Auth(policy AuthPolicy) RouteOption {
 func Use(mw ...Middleware) RouteOption {
 	return func(r *Route) {
 		r.Middleware = append(r.Middleware, mw...)
+	}
+}
+
+// Handler builds the required Blueprint handler from an existing http.Handler.
+// Prefer Func for plain http.HandlerFunc values and methods.
+// Panics if h is nil, including typed-nil handlers.
+// Handler 使用现成的 http.Handler 构造 Blueprint 必填 handler。
+// 普通 http.HandlerFunc 或方法值优先用 Func。
+// h 为 nil 时会 panic，包括 typed-nil handler。
+func Handler(h http.Handler) handlerSpec {
+	return handlerSpec{handler: mustHandler(h)}
+}
+
+// Func builds the required Blueprint handler from an http.HandlerFunc.
+// This is the preferred option for plain handler functions and methods.
+// Panics if fn is nil.
+// Func 使用 http.HandlerFunc 构造 Blueprint 必填 handler。
+// 这是普通 handler 函数和方法值的首选写法。
+// fn 为 nil 时会 panic。
+func Func(fn http.HandlerFunc) handlerSpec {
+	return handlerSpec{handler: mustHandler(fn)}
+}
+
+func mustHandler(h http.Handler) http.Handler {
+	if isNilHandler(h) {
+		panic("routes: nil handler")
+	}
+	return h
+}
+
+func isNilHandler(h http.Handler) bool {
+	if h == nil {
+		return true
+	}
+	v := reflect.ValueOf(h)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return v.IsNil()
+	default:
+		return false
 	}
 }
 
@@ -178,13 +215,21 @@ func (b *Blueprint) withDefaults(route Route) Route {
 }
 
 // Handle adds a route.
+// The handler is required as the fourth argument.
+// Panics if spec is invalid.
 // Handle 添加路由。
-func (b *Blueprint) Handle(method, path string, handler http.Handler, opts ...RouteOption) {
+// 第四个参数必须提供 handler。
+// spec 非法时会 panic。
+func (b *Blueprint) Handle(method, path, summary string, spec handlerSpec, opts ...RouteOption) {
 	b = requireBlueprint(b)
+	if spec.handler == nil {
+		panic("routes: missing handler")
+	}
 	route := Route{
 		Method:  method,
 		Path:    path,
-		Handler: handler,
+		Summary: summary,
+		Handler: spec.handler,
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -196,32 +241,32 @@ func (b *Blueprint) Handle(method, path string, handler http.Handler, opts ...Ro
 
 // Get adds a GET route.
 // Get 添加 GET 路由。
-func (b *Blueprint) Get(path string, handler http.Handler, opts ...RouteOption) {
-	b.Handle(http.MethodGet, path, handler, opts...)
+func (b *Blueprint) Get(path, summary string, spec handlerSpec, opts ...RouteOption) {
+	b.Handle(http.MethodGet, path, summary, spec, opts...)
 }
 
 // Post adds a POST route.
 // Post 添加 POST 路由。
-func (b *Blueprint) Post(path string, handler http.Handler, opts ...RouteOption) {
-	b.Handle(http.MethodPost, path, handler, opts...)
+func (b *Blueprint) Post(path, summary string, spec handlerSpec, opts ...RouteOption) {
+	b.Handle(http.MethodPost, path, summary, spec, opts...)
 }
 
 // Put adds a PUT route.
 // Put 添加 PUT 路由。
-func (b *Blueprint) Put(path string, handler http.Handler, opts ...RouteOption) {
-	b.Handle(http.MethodPut, path, handler, opts...)
+func (b *Blueprint) Put(path, summary string, spec handlerSpec, opts ...RouteOption) {
+	b.Handle(http.MethodPut, path, summary, spec, opts...)
 }
 
 // Patch adds a PATCH route.
 // Patch 添加 PATCH 路由。
-func (b *Blueprint) Patch(path string, handler http.Handler, opts ...RouteOption) {
-	b.Handle(http.MethodPatch, path, handler, opts...)
+func (b *Blueprint) Patch(path, summary string, spec handlerSpec, opts ...RouteOption) {
+	b.Handle(http.MethodPatch, path, summary, spec, opts...)
 }
 
 // Delete adds a DELETE route.
 // Delete 添加 DELETE 路由。
-func (b *Blueprint) Delete(path string, handler http.Handler, opts ...RouteOption) {
-	b.Handle(http.MethodDelete, path, handler, opts...)
+func (b *Blueprint) Delete(path, summary string, spec handlerSpec, opts ...RouteOption) {
+	b.Handle(http.MethodDelete, path, summary, spec, opts...)
 }
 
 // Include adds child routes under prefix.

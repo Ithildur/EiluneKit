@@ -117,7 +117,7 @@ func mountRoutes(r chi.Router, routes []Route, authResolver AuthResolver) error 
 		if err != nil {
 			return fmt.Errorf("routes: route[%d]: %w", i, err)
 		}
-		if raw.Handler == nil {
+		if isNilHandler(raw.Handler) {
 			return fmt.Errorf("routes: route[%d] %s %s: nil handler", i, method, path)
 		}
 

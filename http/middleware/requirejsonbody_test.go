@@ -1,5 +1,5 @@
-// Contract tests for JSONOnly middleware.
-// JSONOnly 的契约测试：只允许 JSON body，空 body 放行。
+// Contract tests for RequireJSONBody middleware.
+// RequireJSONBody 的契约测试：只允许 JSON body，空 body 放行。
 package middleware
 
 import (
@@ -12,13 +12,13 @@ import (
 	"github.com/Ithildur/EiluneKit/http/response"
 )
 
-func TestJSONOnly_AllowsEmptyBody(t *testing.T) {
+func TestRequireJSONBody_AllowsEmptyBody(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	handler := JSONOnly(next)
+	handler := RequireJSONBody(next)
 	req := httptest.NewRequest(http.MethodPost, "/x", nil)
 	rec := httptest.NewRecorder()
 
@@ -32,12 +32,12 @@ func TestJSONOnly_AllowsEmptyBody(t *testing.T) {
 	}
 }
 
-func TestJSONOnly_RejectsNonJSON(t *testing.T) {
+func TestRequireJSONBody_RejectsNonJSON(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	handler := JSONOnly(next)
+	handler := RequireJSONBody(next)
 	req := httptest.NewRequest(http.MethodPost, "/x", strings.NewReader("nope"))
 	req.Header.Set("Content-Type", "text/plain")
 	rec := httptest.NewRecorder()
