@@ -4,7 +4,7 @@
 
 ## Recommended Path
 
-Use `routes.Blueprint` in normal application code. It keeps handlers, metadata, auth policy, tags, and middleware in one place, and makes child route inclusion explicit.
+Use `routes.Blueprint` in normal application code. It keeps handlers, metadata, tags, and middleware in one place, and makes child route inclusion explicit.
 
 Use lower-level `routes.Route` and `routes.Mount` when routes are generated, adapted from another router, or when you need direct control over the route slice. `Blueprint` builds the same route data; it is not a second routing system.
 
@@ -13,9 +13,15 @@ Use lower-level `routes.Route` and `routes.Mount` when routes are generated, ada
 ## Blueprint
 
 ```go
+bearer, err := authhttp.RequireBearer(manager)
+if err != nil {
+	return err
+}
+
 updater := routes.NewBlueprint(
 	routes.DefaultTags("updater"),
-	routes.DefaultAuth(routes.AuthBearerRequired),
+	routes.DefaultAuth(routes.AuthRequired),
+	routes.DefaultMiddleware(bearer),
 )
 updater.Post(
 	"/refresh",
@@ -26,21 +32,24 @@ updater.Post(
 api := routes.NewBlueprint()
 api.Include("/updater", updater)
 
-err := api.MountAt(r, "/api", routes.WithAuth(authResolver))
+err = api.MountAt(r, "/api")
 ```
 
 `Blueprint.Routes()` returns owned `[]routes.Route` copies, so callers can still export or mount through the lower-level functions.
+
+`AuthPublic`, `AuthOptional`, and `AuthRequired` are export metadata only. Runtime auth still belongs in middleware.
 
 ## Lower Level
 
 ```go
 routes.Mount(r, "/api", []routes.Route{
 	{
-		Method:  http.MethodGet,
-		Path:    "/status",
-		Summary: "Get status",
-		Auth:    routes.AuthNone,
-		Handler: http.HandlerFunc(status),
+		Method:     http.MethodGet,
+		Path:       "/status",
+		Summary:    "Get status",
+		Auth:       routes.AuthRequired,
+		Handler:    http.HandlerFunc(status),
+		Middleware: []routes.Middleware{bearer},
 	},
 })
 ```

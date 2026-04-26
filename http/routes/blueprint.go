@@ -16,7 +16,7 @@ import (
 type Blueprint struct {
 	routes     []Route
 	tags       []string
-	auth       AuthPolicy
+	auth       AuthRequirement
 	hasAuth    bool
 	middleware []Middleware
 }
@@ -27,7 +27,7 @@ type BlueprintOption func(*blueprintConfig)
 
 type blueprintConfig struct {
 	tags       []string
-	auth       AuthPolicy
+	auth       AuthRequirement
 	hasAuth    bool
 	middleware []Middleware
 }
@@ -40,11 +40,13 @@ func DefaultTags(tags ...string) BlueprintOption {
 	}
 }
 
-// DefaultAuth sets the default auth policy.
-// DefaultAuth 设置默认认证策略。
-func DefaultAuth(policy AuthPolicy) BlueprintOption {
+// DefaultAuth sets the default exported auth requirement.
+// It does not apply middleware.
+// DefaultAuth 设置默认导出认证要求。
+// 它不会应用中间件。
+func DefaultAuth(auth AuthRequirement) BlueprintOption {
 	return func(c *blueprintConfig) {
-		c.auth = policy
+		c.auth = auth
 		c.hasAuth = true
 	}
 }
@@ -73,11 +75,13 @@ func Tags(tags ...string) RouteOption {
 	}
 }
 
-// Auth sets Route.Auth.
-// Auth 设置 Route.Auth。
-func Auth(policy AuthPolicy) RouteOption {
+// Auth sets Route.Auth for exported metadata.
+// It does not apply middleware.
+// Auth 设置导出元数据中的 Route.Auth。
+// 它不会应用中间件。
+func Auth(auth AuthRequirement) RouteOption {
 	return func(r *Route) {
-		r.Auth = policy
+		r.Auth = auth
 	}
 }
 
@@ -135,7 +139,7 @@ type IncludeOption func(*includeConfig)
 
 type includeConfig struct {
 	tags       []string
-	auth       AuthPolicy
+	auth       AuthRequirement
 	hasAuth    bool
 	middleware []Middleware
 }
@@ -148,11 +152,13 @@ func IncludeTags(tags ...string) IncludeOption {
 	}
 }
 
-// IncludeAuth sets the auth policy on included routes.
-// IncludeAuth 为 include 的路由设置认证策略。
-func IncludeAuth(policy AuthPolicy) IncludeOption {
+// IncludeAuth sets the exported auth requirement on included routes.
+// It does not apply middleware.
+// IncludeAuth 为 include 的路由设置导出认证要求。
+// 它不会应用中间件。
+func IncludeAuth(auth AuthRequirement) IncludeOption {
 	return func(c *includeConfig) {
-		c.auth = policy
+		c.auth = auth
 		c.hasAuth = true
 	}
 }
@@ -306,15 +312,15 @@ func (b *Blueprint) Routes() []Route {
 
 // Mount registers the routes on router.
 // Mount 在 router 上注册路由。
-func (b *Blueprint) Mount(router chi.Router, opts ...MountOption) error {
-	return b.MountAt(router, "", opts...)
+func (b *Blueprint) Mount(router chi.Router) error {
+	return b.MountAt(router, "")
 }
 
 // MountAt registers the routes under prefix.
 // MountAt 在 prefix 下注册路由。
-func (b *Blueprint) MountAt(router chi.Router, prefix string, opts ...MountOption) error {
+func (b *Blueprint) MountAt(router chi.Router, prefix string) error {
 	b = requireBlueprint(b)
-	return Mount(router, prefix, b.routes, opts...)
+	return Mount(router, prefix, b.routes)
 }
 
 // ExportJSON exports route metadata as JSON.

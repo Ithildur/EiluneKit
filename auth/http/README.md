@@ -74,27 +74,48 @@ r.Use(bearer)
 
 `RequireBearer` accepts any `AccessTokenValidator`. It parses the HTTP `Authorization: Bearer` header in the HTTP layer, while `jwt.Manager` only validates the raw access token.
 
+Use `OptionalBearer` when a public route may attach user claims but must still reject malformed or invalid tokens.
+
+```go
+optionalBearer, err := authhttp.OptionalBearer(manager)
+if err != nil {
+	return err
+}
+route.Get("/feed", "List feed", routes.Func(feed), routes.Auth(routes.AuthOptional), routes.Use(optionalBearer))
+```
+
+## API Key Middleware
+
+```go
+nodeKey, err := authhttp.RequireAPIKey(authhttp.APIKeyValidatorFunc(func(ctx context.Context, key string) (bool, error) {
+	return subtle.ConstantTimeCompare([]byte(key), []byte(nodeSecret)) == 1, nil
+}), "X-Node-Secret")
+if err != nil {
+	return err
+}
+route.Get("/node/metrics", "Node metrics", routes.Func(metrics), routes.Auth(routes.AuthRequired), routes.Use(nodeKey))
+```
+
+An empty header name defaults to `X-API-Key`.
+
 ## Routes
 
 Default base path: `/auth`.
 
-| Route | Auth |
-|---|---|
-| `POST /auth/login` | `routes.AuthNone` |
-| `POST /auth/refresh` | `routes.AuthRefreshCookie` |
-| `POST /auth/logout` | `routes.AuthRefreshCookie` |
-| `DELETE /auth/sessions/current` | `routes.AuthBearerRequired` |
-| `DELETE /auth/sessions` | `routes.AuthBearerRequired` |
-| `DELETE /auth/sessions/{sid}` | `routes.AuthBearerRequired` |
+| Route | Auth | Middleware |
+|---|---|---|
+| `POST /auth/login` | `public` | login rate limit, body limit, JSON body |
+| `POST /auth/refresh` | `required` | refresh-cookie + CSRF |
+| `POST /auth/logout` | `required` | refresh-cookie + CSRF |
+| `DELETE /auth/sessions/current` | `required` | `RequireBearer` |
+| `DELETE /auth/sessions` | `required` | `RequireBearer` |
+| `DELETE /auth/sessions/{sid}` | `required` | `RequireBearer` |
 
-`Handler.Routes()` returns the same route set as declarative `http/routes.Route` values. When mounting them manually, first build the resolver with `authHandler.AuthResolver()`, then pass `routes.WithAuth(resolver)`. Omitting that resolver is a mount-time error for protected routes.
+`Handler.Routes()` returns the same route set as declarative `http/routes.Route` values. Returned routes already contain their auth middleware.
 
 ```go
-resolver, err := authHandler.AuthResolver()
-if err != nil {
-	return err
-}
-err = routes.Mount(r, "", authHandler.Routes(), routes.WithAuth(resolver))
+routeList := authHandler.Routes()
+err := routes.Mount(r, "", routeList)
 ```
 
 ## Options
@@ -115,5 +136,4 @@ Forwarded headers are trusted only when `TrustedProxies` is set. The default rat
 - `NewHandler` requires both a `TokenManager` and `Options.LoginAuthenticator`.
 - `NewHandler` takes one `Options` struct; fields other than `LoginAuthenticator` fall back to defaults when left zero-valued.
 - `NewStaticPasswordAuthenticator` requires a non-empty user ID and password.
-- `AuthResolver` may fail when the handler is nil or the bearer middleware dependencies are missing.
 - `VerifyCredential` performs exact byte comparison and is suitable for pre-hashed or application-derived credentials.

@@ -37,9 +37,9 @@ func (r *Router) Routes() []Route {
 
 // Mount registers the routes on router.
 // Mount 在 router 上注册路由。
-func (r *Router) Mount(router chi.Router, prefix string, opts ...MountOption) error {
+func (r *Router) Mount(router chi.Router, prefix string) error {
 	r = requireRouter(r)
-	return Mount(router, prefix, r.routes, opts...)
+	return Mount(router, prefix, r.routes)
 }
 
 // ExportJSON exports route metadata as JSON.

@@ -27,6 +27,8 @@ func writeAuthFailure(w stdhttp.ResponseWriter, err error) {
 
 func isAuthMisconfigured(err error) bool {
 	return errors.Is(err, authcore.ErrServiceMisconfigured) ||
+		errors.Is(err, ErrAccessTokenValidatorMissing) ||
+		errors.Is(err, ErrAPIKeyValidatorMissing) ||
 		errors.Is(err, authcore.ErrTokenManagerMissing) ||
 		errors.Is(err, authcore.ErrLoginAuthenticatorMissing) ||
 		errors.Is(err, authcore.ErrUserIDEmpty) ||

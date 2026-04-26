@@ -86,7 +86,7 @@ func TestRequireBearerRejectsInvalidHeader(t *testing.T) {
 	if auth.token != "" {
 		t.Fatalf("expected validator to stay untouched, got token %q", auth.token)
 	}
-	assertBearerErrorResponse(t, rec, http.StatusUnauthorized, "unauthorized", "missing or invalid bearer token")
+	assertAuthErrorResponse(t, rec, http.StatusUnauthorized, "unauthorized", "missing or invalid bearer token")
 }
 
 func TestRequireBearerRejectsInvalidToken(t *testing.T) {
@@ -110,7 +110,7 @@ func TestRequireBearerRejectsInvalidToken(t *testing.T) {
 	if nextCalled {
 		t.Fatal("expected next handler to stay untouched")
 	}
-	assertBearerErrorResponse(t, rec, http.StatusUnauthorized, "unauthorized", "token invalid or expired")
+	assertAuthErrorResponse(t, rec, http.StatusUnauthorized, "unauthorized", "token invalid or expired")
 }
 
 func TestRequireBearerPropagatesStoreUnavailable(t *testing.T) {
@@ -136,7 +136,7 @@ func TestRequireBearerPropagatesStoreUnavailable(t *testing.T) {
 	if nextCalled {
 		t.Fatal("expected next handler to stay untouched")
 	}
-	assertBearerErrorResponse(t, rec, http.StatusServiceUnavailable, "auth_unavailable", "auth is unavailable")
+	assertAuthErrorResponse(t, rec, http.StatusServiceUnavailable, "auth_unavailable", "auth is unavailable")
 }
 
 func TestRequireBearerRejectsMisconfiguredValidator(t *testing.T) {
@@ -162,10 +162,103 @@ func TestRequireBearerRejectsMisconfiguredValidator(t *testing.T) {
 	if nextCalled {
 		t.Fatal("expected next handler to stay untouched")
 	}
-	assertBearerErrorResponse(t, rec, http.StatusInternalServerError, "auth_misconfigured", "auth is misconfigured")
+	assertAuthErrorResponse(t, rec, http.StatusInternalServerError, "auth_misconfigured", "auth is misconfigured")
 }
 
-func assertBearerErrorResponse(t *testing.T, rec *httptest.ResponseRecorder, wantStatus int, wantCode, wantMsg string) {
+func TestOptionalBearerAllowsMissingToken(t *testing.T) {
+	auth := &bearerOnlyStub{}
+	middleware, err := authhttp.OptionalBearer(auth)
+	if err != nil {
+		t.Fatalf("optional bearer: %v", err)
+	}
+	nextCalled := false
+
+	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/public", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if !nextCalled {
+		t.Fatal("expected next handler to be called")
+	}
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
+	}
+	if auth.token != "" {
+		t.Fatalf("expected validator to stay untouched, got token %q", auth.token)
+	}
+}
+
+func TestOptionalBearerRejectsInvalidToken(t *testing.T) {
+	auth := &bearerOnlyStub{}
+	middleware, err := authhttp.OptionalBearer(auth)
+	if err != nil {
+		t.Fatalf("optional bearer: %v", err)
+	}
+
+	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("next handler should not be called")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/public", nil)
+	req.Header.Set("Authorization", "Bearer bad")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assertAuthErrorResponse(t, rec, http.StatusUnauthorized, "unauthorized", "token invalid or expired")
+}
+
+func TestRequireAPIKeyAcceptsCustomHeader(t *testing.T) {
+	middleware, err := authhttp.RequireAPIKey(authhttp.APIKeyValidatorFunc(func(ctx context.Context, key string) (bool, error) {
+		return key == "secret", nil
+	}), "X-Node-Secret")
+	if err != nil {
+		t.Fatalf("require api key: %v", err)
+	}
+	nextCalled := false
+
+	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/node/metrics", nil)
+	req.Header.Set("X-Node-Secret", "secret")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if !nextCalled {
+		t.Fatal("expected next handler to be called")
+	}
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
+	}
+}
+
+func TestRequireAPIKeyRejectsMissingKey(t *testing.T) {
+	middleware, err := authhttp.RequireAPIKey(authhttp.APIKeyValidatorFunc(func(ctx context.Context, key string) (bool, error) {
+		return true, nil
+	}), "")
+	if err != nil {
+		t.Fatalf("require api key: %v", err)
+	}
+
+	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("next handler should not be called")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/node/metrics", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	assertAuthErrorResponse(t, rec, http.StatusUnauthorized, "unauthorized", "missing api key")
+}
+
+func assertAuthErrorResponse(t *testing.T, rec *httptest.ResponseRecorder, wantStatus int, wantCode, wantMsg string) {
 	t.Helper()
 	if rec.Code != wantStatus {
 		t.Fatalf("expected status %d, got %d", wantStatus, rec.Code)

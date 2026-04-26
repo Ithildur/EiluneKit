@@ -26,6 +26,7 @@ type Handler struct {
 	auth    TokenManager
 	service *auth.Service
 	options Options
+	bearer  routes.Middleware
 }
 
 const errAuthMisconfiguredCode = "auth_misconfigured"
@@ -44,10 +45,16 @@ func NewHandler(manager TokenManager, opts Options) (*Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	bearer, err := RequireBearer(manager)
+	if err != nil {
+		return nil, fmt.Errorf("build bearer middleware: %w", err)
+	}
+
 	return &Handler{
 		auth:    manager,
 		service: service,
 		options: effective,
+		bearer:  bearer,
 	}, nil
 }
 
@@ -56,36 +63,25 @@ func NewHandler(manager TokenManager, opts Options) (*Handler, error) {
 // Register 在 r 上挂载认证路由。
 // 调用 Register(r) 挂载路由及其认证中间件。
 func (h *Handler) Register(r chi.Router) error {
-	resolver, err := h.AuthResolver()
-	if err != nil {
-		return fmt.Errorf("build auth resolver: %w", err)
-	}
-	return routes.Mount(r, "", h.Routes(), routes.WithAuth(resolver))
-}
-
-// AuthResolver returns the middleware mapping required by Routes.
-// Call routes.WithAuth(resolver) when mounting Routes manually.
-// AuthResolver 返回 Routes 所需的中间件映射。
-// 手工挂载 Routes 时调用 routes.WithAuth(resolver)。
-func (h *Handler) AuthResolver() (routes.AuthResolver, error) {
 	if h == nil {
-		return nil, fmt.Errorf("authhttp: handler is nil")
+		return fmt.Errorf("authhttp: handler is nil")
 	}
-	bearer, err := RequireBearer(h.auth)
-	if err != nil {
-		return nil, fmt.Errorf("build bearer middleware: %w", err)
-	}
-	return routes.AuthResolver{
-		routes.AuthBearerRequired: bearer,
-		routes.AuthRefreshCookie:  h.requireRefreshCookie(),
-	}, nil
+	return routes.Mount(r, "", h.Routes())
 }
 
 // Routes returns the auth routes.
-// Call AuthResolver and routes.WithAuth when mounting them manually.
+// Returned routes already include their auth middleware.
+// Nil Handler is invalid and panics.
 // Routes 返回认证路由。
-// 手工挂载时先调用 AuthResolver，再配合 routes.WithAuth 使用。
+// 返回的路由已包含各自的认证中间件。
+// Nil Handler 无效，调用时会 panic。
 func (h *Handler) Routes() []routes.Route {
+	if h == nil {
+		panic("authhttp: handler is nil")
+	}
+
+	refresh := h.requireRefreshCookie()
+
 	opts := h.options
 	var loginChain []func(stdhttp.Handler) stdhttp.Handler
 	rateLimitOpts := opts.RateLimit
@@ -103,12 +99,14 @@ func (h *Handler) Routes() []routes.Route {
 	}
 	loginChain = append(loginChain, middleware.LimitBody(maxBytes))
 
-	authRoutes := routes.NewBlueprint(routes.DefaultTags("auth"))
+	authRoutes := routes.NewBlueprint(
+		routes.DefaultTags("auth"),
+		routes.DefaultAuth(routes.AuthPublic),
+	)
 	authRoutes.Post(
 		"/login",
 		"Login",
 		routes.Func(h.handleLogin),
-		routes.Auth(routes.AuthNone),
 		routes.Use(loginChain...),
 		routes.Use(middleware.RequireJSONBody),
 	)
@@ -116,16 +114,21 @@ func (h *Handler) Routes() []routes.Route {
 		"/refresh",
 		"Refresh access token",
 		routes.Func(h.handleRefresh),
-		routes.Auth(routes.AuthRefreshCookie),
+		routes.Auth(routes.AuthRequired),
+		routes.Use(refresh),
 	)
 	authRoutes.Post(
 		"/logout",
 		"Logout",
 		routes.Func(h.handleLogout),
-		routes.Auth(routes.AuthRefreshCookie),
+		routes.Auth(routes.AuthRequired),
+		routes.Use(refresh),
 	)
 
-	sessions := routes.NewBlueprint(routes.DefaultAuth(routes.AuthBearerRequired))
+	sessions := routes.NewBlueprint(
+		routes.DefaultAuth(routes.AuthRequired),
+		routes.DefaultMiddleware(h.bearer),
+	)
 	sessions.Delete(
 		"/current",
 		"Revoke current session",

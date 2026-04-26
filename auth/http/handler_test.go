@@ -16,6 +16,7 @@ import (
 	authjwt "github.com/Ithildur/EiluneKit/auth/jwt"
 	authsession "github.com/Ithildur/EiluneKit/auth/session"
 	"github.com/Ithildur/EiluneKit/http/response"
+	"github.com/Ithildur/EiluneKit/http/routes"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
@@ -322,15 +323,47 @@ func TestLogin(t *testing.T) {
 	})
 }
 
-func TestAuthResolverRejectsNilHandler(t *testing.T) {
+func TestRegisterRejectsNilHandler(t *testing.T) {
 	var handler *authhttp.Handler
 
-	_, err := handler.AuthResolver()
+	err := handler.Register(chi.NewRouter())
 	if err == nil {
 		t.Fatal("expected nil handler to fail")
 	}
 	if got, want := err.Error(), "authhttp: handler is nil"; got != want {
 		t.Fatalf("expected error %q, got %q", want, got)
+	}
+}
+
+func TestRoutesExportAuthRequirement(t *testing.T) {
+	handler := mustNewHandler(t, &stubManager{}, testOptions(stubAuthenticator("admin", "secret", "user-1")))
+	routeList := handler.Routes()
+
+	payload, err := routes.ExportJSON(routeList)
+	if err != nil {
+		t.Fatalf("export routes: %v", err)
+	}
+
+	var exported []struct {
+		Path string                 `json:"path"`
+		Auth routes.AuthRequirement `json:"auth"`
+	}
+	if err := json.Unmarshal(payload, &exported); err != nil {
+		t.Fatalf("unmarshal routes: %v", err)
+	}
+
+	authByPath := make(map[string]routes.AuthRequirement, len(exported))
+	for _, route := range exported {
+		authByPath[route.Path] = route.Auth
+	}
+	if got, want := authByPath["/auth/login"], routes.AuthPublic; got != want {
+		t.Fatalf("expected login auth %q, got %q", want, got)
+	}
+	if got, want := authByPath["/auth/refresh"], routes.AuthRequired; got != want {
+		t.Fatalf("expected refresh auth %q, got %q", want, got)
+	}
+	if got, want := authByPath["/auth/sessions/current"], routes.AuthRequired; got != want {
+		t.Fatalf("expected session auth %q, got %q", want, got)
 	}
 }
 

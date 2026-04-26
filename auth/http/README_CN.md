@@ -74,27 +74,48 @@ r.Use(bearer)
 
 `RequireBearer` 接受任意 `AccessTokenValidator`。它会在 HTTP 层解析 `Authorization: Bearer` 请求头，而 `jwt.Manager` 只负责校验原始 access token。
 
+公开路由需要“有 token 就挂 claims，没 token 就匿名继续”时，使用 `OptionalBearer`。它仍会拒绝格式错误或无效 token。
+
+```go
+optionalBearer, err := authhttp.OptionalBearer(manager)
+if err != nil {
+	return err
+}
+route.Get("/feed", "List feed", routes.Func(feed), routes.Auth(routes.AuthOptional), routes.Use(optionalBearer))
+```
+
+## API Key 中间件
+
+```go
+nodeKey, err := authhttp.RequireAPIKey(authhttp.APIKeyValidatorFunc(func(ctx context.Context, key string) (bool, error) {
+	return subtle.ConstantTimeCompare([]byte(key), []byte(nodeSecret)) == 1, nil
+}), "X-Node-Secret")
+if err != nil {
+	return err
+}
+route.Get("/node/metrics", "Node metrics", routes.Func(metrics), routes.Auth(routes.AuthRequired), routes.Use(nodeKey))
+```
+
+header 名为空时默认使用 `X-API-Key`。
+
 ## 路由
 
 默认基础路径：`/auth`。
 
-| 路由 | 认证 |
-|---|---|
-| `POST /auth/login` | `routes.AuthNone` |
-| `POST /auth/refresh` | `routes.AuthRefreshCookie` |
-| `POST /auth/logout` | `routes.AuthRefreshCookie` |
-| `DELETE /auth/sessions/current` | `routes.AuthBearerRequired` |
-| `DELETE /auth/sessions` | `routes.AuthBearerRequired` |
-| `DELETE /auth/sessions/{sid}` | `routes.AuthBearerRequired` |
+| 路由 | 认证 | 中间件 |
+|---|---|---|
+| `POST /auth/login` | `public` | 登录限流、请求体限制、JSON body |
+| `POST /auth/refresh` | `required` | refresh-cookie + CSRF |
+| `POST /auth/logout` | `required` | refresh-cookie + CSRF |
+| `DELETE /auth/sessions/current` | `required` | `RequireBearer` |
+| `DELETE /auth/sessions` | `required` | `RequireBearer` |
+| `DELETE /auth/sessions/{sid}` | `required` | `RequireBearer` |
 
-`Handler.Routes()` 会返回同一组 `http/routes.Route`。如果你手工挂载它们，必须先通过 `authHandler.AuthResolver()` 构建 resolver，再传入 `routes.WithAuth(resolver)`。对受保护路由来说，缺少这个 resolver 会在挂载时直接报错。
+`Handler.Routes()` 会返回同一组 `http/routes.Route`。返回的路由已经包含各自的认证中间件。
 
 ```go
-resolver, err := authHandler.AuthResolver()
-if err != nil {
-	return err
-}
-err = routes.Mount(r, "", authHandler.Routes(), routes.WithAuth(resolver))
+routeList := authHandler.Routes()
+err := routes.Mount(r, "", routeList)
 ```
 
 ## 选项
@@ -115,5 +136,4 @@ err = routes.Mount(r, "", authHandler.Routes(), routes.WithAuth(resolver))
 - `NewHandler` 需要 `TokenManager` 和 `Options.LoginAuthenticator`
 - `NewHandler` 接收一个 `Options` 结构体；除 `LoginAuthenticator` 外，其他字段为零值时都会回退到默认配置
 - `NewStaticPasswordAuthenticator` 需要非空 user ID 和 password
-- `AuthResolver` 在 handler 为 nil 或缺少 Bearer 中间件依赖时会返回错误
 - `VerifyCredential` 使用精确字节比较，适合比较预先 hash 后或应用自行派生的凭据

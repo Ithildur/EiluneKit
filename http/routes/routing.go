@@ -1,5 +1,5 @@
-// Package routes provides declarative route definitions with automatic auth middleware.
-// Package routes 提供声明式路由定义与自动认证中间件。
+// Package routes provides declarative route definitions and middleware composition.
+// Package routes 提供声明式路由定义与中间件组合。
 package routes
 
 import (
@@ -12,32 +12,38 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// AuthPolicy is the route authentication requirement.
-// AuthPolicy 表示路由认证要求。
-type AuthPolicy string
-
-const (
-	AuthNone           AuthPolicy = "none"
-	AuthBearerRequired AuthPolicy = "bearer_required"
-	AuthBearerOptional AuthPolicy = "bearer_optional"
-	AuthAPIKey         AuthPolicy = "api_key"
-	AuthRefreshCookie  AuthPolicy = "refresh_cookie"
-)
-
 // Middleware is a chi-compatible middleware.
 // Middleware 是兼容 chi 的中间件。
 type Middleware = func(http.Handler) http.Handler
 
+// AuthRequirement is the exported authentication requirement for a route.
+// It is metadata only; Mount never applies middleware from this field.
+// AuthRequirement 表示导出的路由认证要求。
+// 它只作为元数据；Mount 永远不会根据该字段应用中间件。
+type AuthRequirement string
+
+const (
+	// AuthPublic means no authentication is required.
+	// AuthPublic 表示不要求认证。
+	AuthPublic AuthRequirement = "public"
+	// AuthOptional means authentication may be supplied but is not required.
+	// AuthOptional 表示可以提供认证但不强制要求。
+	AuthOptional AuthRequirement = "optional"
+	// AuthRequired means authentication is required.
+	// AuthRequired 表示必须认证。
+	AuthRequired AuthRequirement = "required"
+)
+
 // Route defines an HTTP endpoint.
-// Pass routes to Mount, optionally with WithAuth.
+// Pass routes to Mount.
 // Route 定义 HTTP 端点。
-// 使用 Mount 挂载路由；需要认证时配合 WithAuth。
+// 使用 Mount 挂载路由。
 type Route struct {
 	Method     string
 	Path       string
 	Summary    string
 	Tags       []string
-	Auth       AuthPolicy
+	Auth       AuthRequirement
 	Handler    http.Handler
 	Middleware []Middleware
 }
@@ -55,61 +61,30 @@ func (r Route) Clone() Route {
 	return out
 }
 
-// AuthResolver maps AuthPolicy to middleware.
-// Mount requires entries for every protected route.
-// AuthResolver 将 AuthPolicy 映射到中间件。
-// Mount 要求每个受保护路由都有对应映射。
-type AuthResolver map[AuthPolicy]Middleware
-
-type MountOption func(*mountConfig)
-
-type mountConfig struct {
-	authResolver AuthResolver
-}
-
-// WithAuth applies auth middleware from resolver during Mount.
-// Every protected AuthPolicy must exist in resolver.
-// WithAuth 在 Mount 时按 resolver 应用认证中间件。
-// 每个受保护的 AuthPolicy 都必须在 resolver 中存在映射。
-func WithAuth(resolver AuthResolver) MountOption {
-	return func(c *mountConfig) {
-		c.authResolver = resolver
-	}
-}
-
 // Mount registers routes on r.
 // Mount does not mutate routes.
-// Missing auth middleware is a mount error.
 // Mount 在 r 上注册路由。
 // Mount 不会修改 routes。
-// 缺少认证中间件会直接报错。
-func Mount(r chi.Router, prefix string, routes []Route, opts ...MountOption) error {
+func Mount(r chi.Router, prefix string, routes []Route) error {
 	if r == nil {
 		return fmt.Errorf("routes: nil chi.Router")
 	}
 
-	var cfg mountConfig
-	for _, opt := range opts {
-		if opt != nil {
-			opt(&cfg)
-		}
-	}
-
 	p := cleanPrefix(prefix)
 	if p == "" {
-		return mountRoutes(r, routes, cfg.authResolver)
+		return mountRoutes(r, routes)
 	}
 
 	var mountErr error
 	r.Route(p, func(r chi.Router) {
-		if err := mountRoutes(r, routes, cfg.authResolver); err != nil && mountErr == nil {
+		if err := mountRoutes(r, routes); err != nil && mountErr == nil {
 			mountErr = err
 		}
 	})
 	return mountErr
 }
 
-func mountRoutes(r chi.Router, routes []Route, authResolver AuthResolver) error {
+func mountRoutes(r chi.Router, routes []Route) error {
 	seen := make(map[string]struct{}, len(routes))
 
 	for i, raw := range routes {
@@ -135,18 +110,6 @@ func mountRoutes(r chi.Router, routes []Route, authResolver AuthResolver) error 
 			}
 		}
 
-		authPolicy := effectiveAuth(raw.Auth)
-		if authPolicy != AuthNone {
-			if authResolver == nil {
-				return fmt.Errorf("routes: route[%d] %s %s: missing middleware for auth policy %q", i, method, path, authPolicy)
-			}
-			mw, ok := authResolver[authPolicy]
-			if !ok || mw == nil {
-				return fmt.Errorf("routes: route[%d] %s %s: missing middleware for auth policy %q", i, method, path, authPolicy)
-			}
-			handler = mw(handler)
-		}
-
 		r.Method(method, path, handler)
 	}
 	return nil
@@ -169,11 +132,11 @@ func normalizeRoute(methodRaw, pathRaw string) (string, string, error) {
 }
 
 type exportRoute struct {
-	Method  string     `json:"method"`
-	Path    string     `json:"path"`
-	Summary string     `json:"summary"`
-	Tags    []string   `json:"tags,omitempty"`
-	Auth    AuthPolicy `json:"auth"`
+	Method  string          `json:"method"`
+	Path    string          `json:"path"`
+	Summary string          `json:"summary"`
+	Tags    []string        `json:"tags,omitempty"`
+	Auth    AuthRequirement `json:"auth"`
 }
 
 // ExportJSON returns route metadata as JSON.
@@ -301,9 +264,9 @@ func normalizePathForExport(pathRaw string) string {
 	return "/" + p
 }
 
-func effectiveAuth(auth AuthPolicy) AuthPolicy {
+func effectiveAuth(auth AuthRequirement) AuthRequirement {
 	if auth == "" {
-		return AuthNone
+		return AuthPublic
 	}
 	return auth
 }
