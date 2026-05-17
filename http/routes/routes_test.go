@@ -76,7 +76,7 @@ func TestBlueprintDefaults(t *testing.T) {
 	defaultMW := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			calls = append(calls, "default")
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(w, r.WithContext(routes.WithAuthenticated(r.Context())))
 		})
 	}
 	routeMW := func(next http.Handler) http.Handler {
@@ -222,7 +222,6 @@ func TestMountAppliesRouteMiddleware(t *testing.T) {
 		{
 			Method:     "get",
 			Path:       "users",
-			Auth:       routes.AuthRequired,
 			Handler:    handler,
 			Middleware: []routes.Middleware{routeMW},
 		},
@@ -240,6 +239,36 @@ func TestMountAppliesRouteMiddleware(t *testing.T) {
 	}
 	if !reflect.DeepEqual(calls, []string{"route", "handler"}) {
 		t.Fatalf("unexpected call order: %#v", calls)
+	}
+}
+
+func TestMountRequiresAuthenticatedContext(t *testing.T) {
+	called := false
+	r := chi.NewRouter()
+	err := routes.Mount(r, "/api", []routes.Route{
+		{
+			Method: "get",
+			Path:   "users",
+			Auth:   routes.AuthRequired,
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				called = true
+				w.WriteHeader(http.StatusNoContent)
+			}),
+		},
+	})
+	if err != nil {
+		t.Fatalf("mount: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/users", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, rec.Code)
+	}
+	if called {
+		t.Fatal("handler should not be called")
 	}
 }
 

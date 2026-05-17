@@ -40,10 +40,10 @@ func DefaultTags(tags ...string) BlueprintOption {
 	}
 }
 
-// DefaultAuth sets the default exported auth requirement.
-// It does not apply middleware.
-// DefaultAuth 设置默认导出认证要求。
-// 它不会应用中间件。
+// DefaultAuth sets the default auth requirement.
+// AuthRequired routes require authenticated context at runtime.
+// DefaultAuth 设置默认认证要求。
+// AuthRequired 路由运行时要求已认证 context。
 func DefaultAuth(auth AuthRequirement) BlueprintOption {
 	return func(c *blueprintConfig) {
 		c.auth = auth
@@ -75,10 +75,10 @@ func Tags(tags ...string) RouteOption {
 	}
 }
 
-// Auth sets Route.Auth for exported metadata.
-// It does not apply middleware.
-// Auth 设置导出元数据中的 Route.Auth。
-// 它不会应用中间件。
+// Auth sets Route.Auth.
+// AuthRequired routes require authenticated context at runtime.
+// Auth 设置 Route.Auth。
+// AuthRequired 路由运行时要求已认证 context。
 func Auth(auth AuthRequirement) RouteOption {
 	return func(r *Route) {
 		r.Auth = auth
@@ -152,10 +152,10 @@ func IncludeTags(tags ...string) IncludeOption {
 	}
 }
 
-// IncludeAuth sets the exported auth requirement on included routes.
-// It does not apply middleware.
-// IncludeAuth 为 include 的路由设置导出认证要求。
-// 它不会应用中间件。
+// IncludeAuth sets the auth requirement on included routes.
+// AuthRequired routes require authenticated context at runtime.
+// IncludeAuth 为 include 的路由设置认证要求。
+// AuthRequired 路由运行时要求已认证 context。
 func IncludeAuth(auth AuthRequirement) IncludeOption {
 	return func(c *includeConfig) {
 		c.auth = auth

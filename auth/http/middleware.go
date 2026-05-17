@@ -9,6 +9,7 @@ import (
 	authjwt "github.com/Ithildur/EiluneKit/auth/jwt"
 	authsession "github.com/Ithildur/EiluneKit/auth/session"
 	"github.com/Ithildur/EiluneKit/http/response"
+	"github.com/Ithildur/EiluneKit/http/routes"
 )
 
 // ErrAccessTokenValidatorMissing means a Bearer middleware was built without a validator.
@@ -93,7 +94,9 @@ func requestWithBearerClaims(w stdhttp.ResponseWriter, r *stdhttp.Request, auth 
 		return nil, false
 	}
 
-	return r.WithContext(authjwt.WithClaims(r.Context(), claims)), true
+	ctx := authjwt.WithClaims(r.Context(), claims)
+	ctx = routes.WithAuthenticated(ctx)
+	return r.WithContext(ctx), true
 }
 
 // RequireAPIKey returns middleware that validates an API key from header.
@@ -128,7 +131,7 @@ func RequireAPIKey(auth APIKeyValidator, header string) (func(stdhttp.Handler) s
 				return
 			}
 
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(w, r.WithContext(routes.WithAuthenticated(r.Context())))
 		})
 	}, nil
 }
@@ -148,6 +151,7 @@ func (h *Handler) requireRefreshCookie() func(stdhttp.Handler) stdhttp.Handler {
 			}
 
 			ctx := context.WithValue(r.Context(), refreshTokenContextKey{}, refresh)
+			ctx = routes.WithAuthenticated(ctx)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

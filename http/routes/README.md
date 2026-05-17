@@ -37,7 +37,7 @@ err = api.MountAt(r, "/api")
 
 `Blueprint.Routes()` returns owned `[]routes.Route` copies, so callers can still export or mount through the lower-level functions.
 
-`AuthPublic`, `AuthOptional`, and `AuthRequired` are export metadata only. Runtime auth still belongs in middleware.
+`AuthPublic`, `AuthOptional`, and `AuthRequired` are exported as route metadata. `Mount` also guards `AuthRequired` routes at runtime, so auth middleware must mark successful requests with `routes.WithAuthenticated`.
 
 ## Lower Level
 

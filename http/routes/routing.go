@@ -17,9 +17,9 @@ import (
 type Middleware = func(http.Handler) http.Handler
 
 // AuthRequirement is the exported authentication requirement for a route.
-// It is metadata only; Mount never applies middleware from this field.
+// Mount guards AuthRequired routes at runtime.
 // AuthRequirement 表示导出的路由认证要求。
-// 它只作为元数据；Mount 永远不会根据该字段应用中间件。
+// Mount 会在运行时保护 AuthRequired 路由。
 type AuthRequirement string
 
 const (
@@ -103,6 +103,9 @@ func mountRoutes(r chi.Router, routes []Route) error {
 		seen[key] = struct{}{}
 
 		handler := raw.Handler
+		if effectiveAuth(raw.Auth) == AuthRequired {
+			handler = requireAuthenticated(handler)
+		}
 
 		for j := len(raw.Middleware) - 1; j >= 0; j-- {
 			if raw.Middleware[j] != nil {

@@ -37,7 +37,7 @@ err = api.MountAt(r, "/api")
 
 `Blueprint.Routes()` 返回拥有所有权的 `[]routes.Route` 副本，所以调用方仍然可以通过底层函数导出或挂载。
 
-`AuthPublic`、`AuthOptional` 和 `AuthRequired` 只用于导出元数据。运行时认证仍然放在中间件里。
+`AuthPublic`、`AuthOptional` 和 `AuthRequired` 会导出为路由元数据。`Mount` 也会在运行时保护 `AuthRequired` 路由，所以认证中间件必须在认证成功后调用 `routes.WithAuthenticated` 标记请求。
 
 ## 底层用法
 
