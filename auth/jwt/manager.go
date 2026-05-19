@@ -43,6 +43,12 @@ var (
 	// ErrStoreUnavailable reports store unavailability.
 	// ErrStoreUnavailable 表示 store 不可用。
 	ErrStoreUnavailable = errors.New("token store unavailable")
+	// ErrSessionListUnsupported reports a store that cannot list sessions.
+	// ErrSessionListUnsupported 表示 store 不支持列出 session。
+	ErrSessionListUnsupported = errors.New("session listing unsupported")
+	// ErrSessionClearUnsupported reports a store that cannot clear sessions.
+	// ErrSessionClearUnsupported 表示 store 不支持清理 session。
+	ErrSessionClearUnsupported = errors.New("session clearing unsupported")
 )
 
 type claimsContextKey struct{}
@@ -71,6 +77,10 @@ type RefreshResult struct {
 	RefreshExpiresAt time.Time `json:"refresh_expires_at,omitempty"`
 	SessionOnly      bool      `json:"session_only,omitempty"`
 }
+
+// SessionInfo is public session metadata for a user.
+// SessionInfo 是用户可见的 session 元数据。
+type SessionInfo = authstore.SessionInfo
 
 // WithClaims stores claims on ctx.
 // Use WithClaims(ctx, claims) before passing ctx downstream.
@@ -320,7 +330,9 @@ func (m *Manager) RevokeSession(ctx context.Context, userID, sessionID string) (
 }
 
 // RevokeAllSessions revokes all sessions for userID.
+// Stores with UserSessionCleaner also remove stored session records.
 // RevokeAllSessions 吊销 userID 的全部 session。
+// 支持 UserSessionCleaner 的 store 也会删除已保存的 session 记录。
 func (m *Manager) RevokeAllSessions(ctx context.Context, userID string) error {
 	if err := m.requireConfigured(); err != nil {
 		return err
@@ -330,10 +342,59 @@ func (m *Manager) RevokeAllSessions(ctx context.Context, userID string) error {
 	if userID == "" {
 		return ErrUserIDRequired
 	}
-	if _, err := m.bumpUserVersion(ctx, userID); err != nil {
+	return m.revokeAllUserSessions(ctx, userID, false)
+}
+
+// Sessions returns stored sessions for userID.
+// Sessions 返回 userID 已保存的 session。
+func (m *Manager) Sessions(ctx context.Context, userID string) ([]SessionInfo, error) {
+	if err := m.requireConfigured(); err != nil {
+		return nil, err
+	}
+	ctx = contextutil.Require(ctx)
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, ErrUserIDRequired
+	}
+	lister, ok := m.store.(authstore.SessionLister)
+	if !ok {
+		return nil, ErrSessionListUnsupported
+	}
+	sessions, err := lister.Sessions(ctx, userID)
+	if err != nil {
+		if errors.Is(err, authstore.ErrStoreUnavailable) {
+			return nil, ErrStoreUnavailable
+		}
+		return nil, err
+	}
+	return sessions, nil
+}
+
+// ClearUserSessions revokes and removes stored sessions for userID.
+// Callers must authorize userID before calling.
+// ClearUserSessions 吊销并清理 userID 已保存的 session。
+// 调用方必须在调用前完成 userID 授权。
+func (m *Manager) ClearUserSessions(ctx context.Context, userID string) error {
+	if err := m.requireConfigured(); err != nil {
 		return err
 	}
-	return nil
+	ctx = contextutil.Require(ctx)
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return ErrUserIDRequired
+	}
+	return m.revokeAllUserSessions(ctx, userID, true)
+}
+
+// ClearAllSessions removes all stored sessions.
+// Callers must restrict this operation to trusted operators.
+// ClearAllSessions 清理全部已保存的 session。
+// 调用方必须限制可信操作方才能执行该操作。
+func (m *Manager) ClearAllSessions(ctx context.Context) error {
+	if err := m.requireConfigured(); err != nil {
+		return err
+	}
+	return m.clearAllSessions(contextutil.Require(ctx))
 }
 
 func (m *Manager) signToken(userID, kind, sessionID string, version int64, ttl time.Duration) (signed string, exp time.Time, jti string, err error) {
@@ -543,6 +604,50 @@ func (m *Manager) revokeSession(ctx context.Context, sessionID string) error {
 		return err
 	}
 	if err := m.store.RevokeSession(ctx, sessionID); err != nil {
+		if errors.Is(err, authstore.ErrStoreUnavailable) {
+			return ErrStoreUnavailable
+		}
+		return err
+	}
+	return nil
+}
+
+func (m *Manager) revokeAllUserSessions(ctx context.Context, userID string, requireClear bool) error {
+	if err := m.requireConfigured(); err != nil {
+		return err
+	}
+	cleaner, ok := m.store.(authstore.UserSessionCleaner)
+	if requireClear && !ok {
+		return ErrSessionClearUnsupported
+	}
+	if _, err := m.bumpUserVersion(ctx, userID); err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
+	return m.clearUserSessions(ctx, cleaner, userID)
+}
+
+func (m *Manager) clearUserSessions(ctx context.Context, cleaner authstore.UserSessionCleaner, userID string) error {
+	if err := cleaner.ClearUserSessions(ctx, userID); err != nil {
+		if errors.Is(err, authstore.ErrStoreUnavailable) {
+			return ErrStoreUnavailable
+		}
+		return err
+	}
+	return nil
+}
+
+func (m *Manager) clearAllSessions(ctx context.Context) error {
+	if err := m.requireConfigured(); err != nil {
+		return err
+	}
+	cleaner, ok := m.store.(authstore.SessionCleaner)
+	if !ok {
+		return ErrSessionClearUnsupported
+	}
+	if err := cleaner.ClearAllSessions(ctx); err != nil {
 		if errors.Is(err, authstore.ErrStoreUnavailable) {
 			return ErrStoreUnavailable
 		}

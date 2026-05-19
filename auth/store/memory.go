@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -20,7 +21,12 @@ type MemoryStore struct {
 	pruneInterval time.Duration
 }
 
-var _ SessionStore = (*MemoryStore)(nil)
+var (
+	_ SessionStore       = (*MemoryStore)(nil)
+	_ SessionLister      = (*MemoryStore)(nil)
+	_ UserSessionCleaner = (*MemoryStore)(nil)
+	_ SessionCleaner     = (*MemoryStore)(nil)
+)
 
 type memorySession struct {
 	userID      string
@@ -193,6 +199,78 @@ func (s *MemoryStore) RevokeSession(ctx context.Context, sessionID string) error
 	}
 	s.mu.Lock()
 	delete(s.sessions, sessionID)
+	s.mu.Unlock()
+	return nil
+}
+
+// Sessions returns stored, unexpired sessions for userID.
+// Sessions 返回 userID 已保存且未过期的 session。
+func (s *MemoryStore) Sessions(ctx context.Context, userID string) ([]SessionInfo, error) {
+	contextutil.Require(ctx)
+	if s == nil {
+		return nil, ErrStoreUnavailable
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, nil
+	}
+	now := time.Now().UTC()
+	s.pruneExpired(now, false)
+
+	s.mu.RLock()
+	out := make([]SessionInfo, 0)
+	for sessionID, item := range s.sessions {
+		if item.userID != userID || !item.exp.After(now) {
+			continue
+		}
+		out = append(out, SessionInfo{
+			ID:          sessionID,
+			ExpiresAt:   item.exp,
+			SessionOnly: item.sessionOnly,
+		})
+	}
+	s.mu.RUnlock()
+
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ExpiresAt.Equal(out[j].ExpiresAt) {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].ExpiresAt.Before(out[j].ExpiresAt)
+	})
+	return out, nil
+}
+
+// ClearUserSessions removes stored sessions for userID.
+// ClearUserSessions 清理 userID 已保存的 session。
+func (s *MemoryStore) ClearUserSessions(ctx context.Context, userID string) error {
+	contextutil.Require(ctx)
+	if s == nil {
+		return ErrStoreUnavailable
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil
+	}
+	s.mu.Lock()
+	for sessionID, item := range s.sessions {
+		if item.userID == userID {
+			delete(s.sessions, sessionID)
+		}
+	}
+	s.mu.Unlock()
+	return nil
+}
+
+// ClearAllSessions removes all stored sessions.
+// ClearAllSessions 清理全部已保存的 session。
+func (s *MemoryStore) ClearAllSessions(ctx context.Context) error {
+	contextutil.Require(ctx)
+	if s == nil {
+		return ErrStoreUnavailable
+	}
+	s.mu.Lock()
+	s.sessions = make(map[string]memorySession)
+	s.lastPrune = time.Time{}
 	s.mu.Unlock()
 	return nil
 }

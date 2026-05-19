@@ -129,6 +129,11 @@ func (h *Handler) Routes() []routes.Route {
 		routes.DefaultAuth(routes.AuthRequired),
 		routes.DefaultMiddleware(h.bearer),
 	)
+	sessions.Get(
+		"/",
+		"List sessions",
+		routes.Func(h.handleListSessions),
+	)
 	sessions.Delete(
 		"/current",
 		"Revoke current session",
@@ -237,6 +242,35 @@ func (h *Handler) handleLogout(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 
 	h.clearSessionCookies(w, r)
 	w.WriteHeader(stdhttp.StatusNoContent)
+}
+
+func (h *Handler) handleListSessions(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+	claims, ok := h.authenticatedClaims(w, r)
+	if !ok {
+		return
+	}
+	sessions, err := h.service.Sessions(r.Context(), claims.Subject)
+	if errors.Is(err, auth.ErrSessionListUnsupported) {
+		response.WriteJSONError(w, stdhttp.StatusNotImplemented, "session_list_unsupported", "session listing is unsupported")
+		return
+	}
+	if err != nil {
+		writeAuthFailure(w, err)
+		return
+	}
+
+	payload := sessionsResponse{
+		Sessions: make([]sessionResponse, 0, len(sessions)),
+	}
+	for _, session := range sessions {
+		payload.Sessions = append(payload.Sessions, sessionResponse{
+			ID:          session.ID,
+			ExpiresAt:   session.ExpiresAt.UTC().Format(time.RFC3339),
+			SessionOnly: session.SessionOnly,
+			Current:     session.ID == claims.SessionID,
+		})
+	}
+	response.WriteJSON(w, stdhttp.StatusOK, payload)
 }
 
 func (h *Handler) handleDeleteCurrentSession(w stdhttp.ResponseWriter, r *stdhttp.Request) {

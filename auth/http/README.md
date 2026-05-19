@@ -107,11 +107,14 @@ Default base path: `/auth`.
 | `POST /auth/login` | `public` | login rate limit, body limit, JSON body |
 | `POST /auth/refresh` | `required` | refresh-cookie + CSRF |
 | `POST /auth/logout` | `required` | refresh-cookie + CSRF |
+| `GET /auth/sessions` | `required` | `RequireBearer` |
 | `DELETE /auth/sessions/current` | `required` | `RequireBearer` |
 | `DELETE /auth/sessions` | `required` | `RequireBearer` |
 | `DELETE /auth/sessions/{sid}` | `required` | `RequireBearer` |
 
 `Handler.Routes()` returns the same route set as declarative `http/routes.Route` values. Returned routes already contain their auth middleware.
+`GET /auth/sessions` requires a manager that implements `auth.SessionLister`; `auth/jwt.Manager` supports it when the store supports session listing.
+`DELETE /auth/sessions` revokes the current user's sessions and clears stored session records when the manager supports cleanup.
 
 ```go
 routeList := authHandler.Routes()

@@ -26,6 +26,26 @@ type TokenManager interface {
 	RevokeAllSessions(ctx context.Context, userID string) error
 }
 
+// SessionLister lists stored sessions for one user.
+// SessionLister 列出单个用户已保存的 session。
+type SessionLister interface {
+	Sessions(ctx context.Context, userID string) ([]SessionInfo, error)
+}
+
+// UserSessionCleaner revokes and removes stored sessions for one user.
+// UserSessionCleaner 吊销并清理单个用户已保存的 session。
+type UserSessionCleaner interface {
+	ClearUserSessions(ctx context.Context, userID string) error
+}
+
+// SessionCleaner removes all stored sessions.
+// Callers must restrict this operation to trusted operators.
+// SessionCleaner 清理全部已保存的 session。
+// 调用方必须限制可信操作方才能执行该操作。
+type SessionCleaner interface {
+	ClearAllSessions(ctx context.Context) error
+}
+
 // IssueOptions controls token issuance behavior.
 // IssueOptions 控制 token 签发行为。
 type IssueOptions = authjwt.IssueOptions
@@ -33,6 +53,18 @@ type IssueOptions = authjwt.IssueOptions
 // RefreshResult carries refreshed tokens.
 // RefreshResult 保存刷新后的 token。
 type RefreshResult = authjwt.RefreshResult
+
+// SessionInfo is public session metadata for a user.
+// SessionInfo 是用户可见的 session 元数据。
+type SessionInfo = authjwt.SessionInfo
+
+// ErrSessionListUnsupported reports a manager that cannot list sessions.
+// ErrSessionListUnsupported 表示 manager 不支持列出 session。
+var ErrSessionListUnsupported = authjwt.ErrSessionListUnsupported
+
+// ErrSessionClearUnsupported reports a manager that cannot clear sessions.
+// ErrSessionClearUnsupported 表示 manager 不支持清理 session。
+var ErrSessionClearUnsupported = authjwt.ErrSessionClearUnsupported
 
 // LoginAuthenticator verifies login credentials.
 // Implementations may ignore username.

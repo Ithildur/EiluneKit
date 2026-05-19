@@ -87,6 +87,50 @@ func TestMemoryStoreRotateRefreshConcurrentSingleSuccess(t *testing.T) {
 	}
 }
 
+func TestMemoryStoreSessionsListsStoredUserSessions(t *testing.T) {
+	s := NewMemoryStore()
+	ctx := context.Background()
+	expSoon := time.Now().UTC().Add(time.Hour)
+	expLater := expSoon.Add(time.Hour)
+
+	if err := s.CreateSession(ctx, "sid-later", SessionState{
+		UserID:    "user-1",
+		RefreshID: "refresh-later",
+		ExpiresAt: expLater,
+	}); err != nil {
+		t.Fatalf("create later session: %v", err)
+	}
+	if err := s.CreateSession(ctx, "sid-soon", SessionState{
+		UserID:      "user-1",
+		RefreshID:   "refresh-soon",
+		ExpiresAt:   expSoon,
+		SessionOnly: true,
+	}); err != nil {
+		t.Fatalf("create soon session: %v", err)
+	}
+	if err := s.CreateSession(ctx, "sid-other", SessionState{
+		UserID:    "user-2",
+		RefreshID: "refresh-other",
+		ExpiresAt: expSoon,
+	}); err != nil {
+		t.Fatalf("create other session: %v", err)
+	}
+
+	sessions, err := s.Sessions(ctx, "user-1")
+	if err != nil {
+		t.Fatalf("sessions: %v", err)
+	}
+	if got, want := len(sessions), 2; got != want {
+		t.Fatalf("expected %d sessions, got %d", want, got)
+	}
+	if sessions[0].ID != "sid-soon" || !sessions[0].SessionOnly {
+		t.Fatalf("unexpected first session: %#v", sessions[0])
+	}
+	if sessions[1].ID != "sid-later" {
+		t.Fatalf("unexpected second session: %#v", sessions[1])
+	}
+}
+
 func TestMemoryStoreBumpUserVersionInvalidatesExpectedVersion(t *testing.T) {
 	s := NewMemoryStore()
 	ctx := context.Background()
@@ -109,5 +153,60 @@ func TestMemoryStoreBumpUserVersionInvalidatesExpectedVersion(t *testing.T) {
 	}
 	if rotated {
 		t.Fatalf("expected rotate to fail when user version mismatches")
+	}
+
+	if _, err := s.BumpUserVersion(ctx, "user-1"); err != nil {
+		t.Fatalf("bump version again: %v", err)
+	}
+	sessions, err := s.Sessions(ctx, "user-1")
+	if err != nil {
+		t.Fatalf("sessions: %v", err)
+	}
+	if got, want := len(sessions), 1; got != want {
+		t.Fatalf("expected %d stored session after version bump, got %#v", want, sessions)
+	}
+}
+
+func TestMemoryStoreClearSessions(t *testing.T) {
+	s := NewMemoryStore()
+	ctx := context.Background()
+	exp := time.Now().UTC().Add(time.Hour)
+
+	if err := s.CreateSession(ctx, "sid-1", SessionState{
+		UserID:    "user-1",
+		RefreshID: "refresh-1",
+		ExpiresAt: exp,
+	}); err != nil {
+		t.Fatalf("create user-1 session: %v", err)
+	}
+	if err := s.CreateSession(ctx, "sid-2", SessionState{
+		UserID:    "user-2",
+		RefreshID: "refresh-2",
+		ExpiresAt: exp,
+	}); err != nil {
+		t.Fatalf("create user-2 session: %v", err)
+	}
+
+	if err := s.ClearUserSessions(ctx, "user-1"); err != nil {
+		t.Fatalf("clear user sessions: %v", err)
+	}
+	if sessions, err := s.Sessions(ctx, "user-1"); err != nil {
+		t.Fatalf("user-1 sessions: %v", err)
+	} else if len(sessions) != 0 {
+		t.Fatalf("expected user-1 sessions to be cleared, got %#v", sessions)
+	}
+	if sessions, err := s.Sessions(ctx, "user-2"); err != nil {
+		t.Fatalf("user-2 sessions: %v", err)
+	} else if got, want := len(sessions), 1; got != want {
+		t.Fatalf("expected %d user-2 session, got %#v", want, sessions)
+	}
+
+	if err := s.ClearAllSessions(ctx); err != nil {
+		t.Fatalf("clear all sessions: %v", err)
+	}
+	if sessions, err := s.Sessions(ctx, "user-2"); err != nil {
+		t.Fatalf("user-2 sessions after clear all: %v", err)
+	} else if len(sessions) != 0 {
+		t.Fatalf("expected all sessions to be cleared, got %#v", sessions)
 	}
 }

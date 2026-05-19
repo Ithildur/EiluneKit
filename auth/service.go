@@ -127,6 +127,52 @@ func (s *Service) RevokeAllSessions(ctx context.Context, userID string) error {
 	return s.auth.RevokeAllSessions(ctx, userID)
 }
 
+// Sessions returns stored sessions for userID.
+// Sessions 返回 userID 已保存的 session。
+func (s *Service) Sessions(ctx context.Context, userID string) ([]SessionInfo, error) {
+	ctx = contextutil.Require(ctx)
+	if err := s.requireAuth(); err != nil {
+		return nil, err
+	}
+	lister, ok := s.auth.(SessionLister)
+	if !ok {
+		return nil, ErrSessionListUnsupported
+	}
+	return lister.Sessions(ctx, userID)
+}
+
+// ClearUserSessions revokes and removes stored sessions for userID.
+// Callers must authorize userID before calling.
+// ClearUserSessions 吊销并清理 userID 已保存的 session。
+// 调用方必须在调用前完成 userID 授权。
+func (s *Service) ClearUserSessions(ctx context.Context, userID string) error {
+	ctx = contextutil.Require(ctx)
+	if err := s.requireAuth(); err != nil {
+		return err
+	}
+	cleaner, ok := s.auth.(UserSessionCleaner)
+	if !ok {
+		return ErrSessionClearUnsupported
+	}
+	return cleaner.ClearUserSessions(ctx, userID)
+}
+
+// ClearAllSessions removes all stored sessions.
+// Callers must restrict this operation to trusted operators.
+// ClearAllSessions 清理全部已保存的 session。
+// 调用方必须限制可信操作方才能执行该操作。
+func (s *Service) ClearAllSessions(ctx context.Context) error {
+	ctx = contextutil.Require(ctx)
+	if err := s.requireAuth(); err != nil {
+		return err
+	}
+	cleaner, ok := s.auth.(SessionCleaner)
+	if !ok {
+		return ErrSessionClearUnsupported
+	}
+	return cleaner.ClearAllSessions(ctx)
+}
+
 func (s *Service) requireAuth() error {
 	switch {
 	case s == nil:

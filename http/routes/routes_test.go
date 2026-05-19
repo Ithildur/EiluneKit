@@ -71,6 +71,81 @@ func TestBlueprintIncludesChildRoutes(t *testing.T) {
 	}
 }
 
+func TestExportOpenAPI(t *testing.T) {
+	payload, err := routes.ExportOpenAPI([]routes.Route{
+		{
+			Method:  http.MethodGet,
+			Path:    "users/{id}",
+			Summary: "Get user",
+			Tags:    []string{"users"},
+			Auth:    routes.AuthRequired,
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+		},
+		{
+			Method:  http.MethodPost,
+			Path:    "/sessions",
+			Summary: "Create session",
+			Auth:    routes.AuthOptional,
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+		},
+	}, routes.OpenAPIOptions{
+		Title:   "Admin API",
+		Version: "1.2.3",
+	})
+	if err != nil {
+		t.Fatalf("export openapi: %v", err)
+	}
+
+	var doc struct {
+		OpenAPI string `json:"openapi"`
+		Info    struct {
+			Title   string `json:"title"`
+			Version string `json:"version"`
+		} `json:"info"`
+		Paths map[string]map[string]struct {
+			Summary  string                `json:"summary"`
+			Tags     []string              `json:"tags"`
+			Security []map[string][]string `json:"security"`
+		} `json:"paths"`
+		Components struct {
+			SecuritySchemes map[string]struct {
+				Type   string `json:"type"`
+				Scheme string `json:"scheme"`
+			} `json:"securitySchemes"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal(payload, &doc); err != nil {
+		t.Fatalf("unmarshal openapi: %v", err)
+	}
+	if got, want := doc.OpenAPI, "3.0.3"; got != want {
+		t.Fatalf("expected openapi %q, got %q", want, got)
+	}
+	if got, want := doc.Info.Title, "Admin API"; got != want {
+		t.Fatalf("expected title %q, got %q", want, got)
+	}
+	if got, want := doc.Info.Version, "1.2.3"; got != want {
+		t.Fatalf("expected version %q, got %q", want, got)
+	}
+	getUser := doc.Paths["/users/{id}"]["get"]
+	if got, want := getUser.Summary, "Get user"; got != want {
+		t.Fatalf("expected summary %q, got %q", want, got)
+	}
+	if !reflect.DeepEqual(getUser.Tags, []string{"users"}) {
+		t.Fatalf("expected users tag, got %#v", getUser.Tags)
+	}
+	if got := getUser.Security[0]["BearerAuth"]; got == nil {
+		t.Fatalf("expected BearerAuth security, got %#v", getUser.Security)
+	}
+	createSession := doc.Paths["/sessions"]["post"]
+	if got, want := len(createSession.Security), 2; got != want {
+		t.Fatalf("expected optional auth security alternatives, got %#v", createSession.Security)
+	}
+	scheme := doc.Components.SecuritySchemes["BearerAuth"]
+	if scheme.Type != "http" || scheme.Scheme != "bearer" {
+		t.Fatalf("unexpected bearer security scheme: %#v", scheme)
+	}
+}
+
 func TestBlueprintDefaults(t *testing.T) {
 	var calls []string
 	defaultMW := func(next http.Handler) http.Handler {

@@ -54,4 +54,11 @@ routes.Mount(r, "/api", []routes.Route{
 })
 ```
 
-Use `routes.ExportJSON` or `routes.ExportMarkdown` when the same route declarations should also produce metadata.
+Use `routes.ExportJSON`, `routes.ExportMarkdown`, or `routes.ExportOpenAPI` when the same route declarations should also produce metadata.
+
+```go
+spec, err := routes.ExportOpenAPI(api.Routes(), routes.OpenAPIOptions{
+	Title:   "Updater API",
+	Version: "1.0.0",
+})
+```

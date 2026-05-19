@@ -54,4 +54,11 @@ routes.Mount(r, "/api", []routes.Route{
 })
 ```
 
-同一套路由声明需要生成元数据时，使用 `routes.ExportJSON` 或 `routes.ExportMarkdown`。
+同一套路由声明需要生成元数据时，使用 `routes.ExportJSON`、`routes.ExportMarkdown` 或 `routes.ExportOpenAPI`。
+
+```go
+spec, err := routes.ExportOpenAPI(api.Routes(), routes.OpenAPIOptions{
+	Title:   "Updater API",
+	Version: "1.0.0",
+})
+```

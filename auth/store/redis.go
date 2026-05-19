@@ -35,7 +35,12 @@ type RedisStore struct {
 	readTimeout  time.Duration
 }
 
-var _ SessionStore = (*RedisStore)(nil)
+var (
+	_ SessionStore       = (*RedisStore)(nil)
+	_ SessionLister      = (*RedisStore)(nil)
+	_ UserSessionCleaner = (*RedisStore)(nil)
+	_ SessionCleaner     = (*RedisStore)(nil)
+)
 
 // RedisOptions configures NewRedisStore.
 // RedisOptions 配置 NewRedisStore。
@@ -86,18 +91,7 @@ func (s *RedisStore) UserVersion(ctx context.Context, userID string) (int64, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.readTimeout)
 	defer cancel()
-	val, err := s.client.Get(ctx, s.userVersionKey(userID)).Result()
-	if errors.Is(err, redis.Nil) {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, ErrStoreUnavailable
-	}
-	version, convErr := strconv.ParseInt(val, 10, 64)
-	if convErr != nil {
-		return 0, fmt.Errorf("invalid user version %q", val)
-	}
-	return version, nil
+	return s.userVersionWithContext(ctx, userID)
 }
 
 // BumpUserVersion invalidates all sessions for userID.
@@ -147,6 +141,10 @@ func (s *RedisStore) CreateSession(ctx context.Context, sessionID string, state 
 		sessionFieldSessionOnly: strconv.FormatBool(state.SessionOnly),
 	})
 	pipe.PExpire(ctx, s.sessionKey(sessionID), ttl)
+	pipe.ZAdd(ctx, s.userSessionsKey(state.UserID), redis.Z{
+		Score:  float64(state.ExpiresAt.UTC().Unix()),
+		Member: sessionID,
+	})
 	if _, err := pipe.Exec(ctx); err != nil {
 		return ErrStoreUnavailable
 	}
@@ -166,6 +164,10 @@ func (s *RedisStore) Session(ctx context.Context, sessionID string) (SessionStat
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.readTimeout)
 	defer cancel()
+	return s.sessionWithContext(ctx, sessionID)
+}
+
+func (s *RedisStore) sessionWithContext(ctx context.Context, sessionID string) (SessionState, bool, error) {
 	values, err := s.client.HGetAll(ctx, s.sessionKey(sessionID)).Result()
 	if err != nil {
 		return SessionState{}, false, ErrStoreUnavailable
@@ -212,13 +214,14 @@ func (s *RedisStore) RotateRefresh(ctx context.Context, sessionID, userID string
 	res, err := rotateRefreshScript.Run(
 		ctx,
 		s.client,
-		[]string{s.userVersionKey(userID), s.sessionKey(sessionID)},
+		[]string{s.userVersionKey(userID), s.sessionKey(sessionID), s.userSessionsKey(userID)},
 		expectedVersion,
 		userID,
 		oldRefreshID,
 		newRefreshID,
 		exp.UTC().Unix(),
 		ttl.Milliseconds(),
+		sessionID,
 	).Result()
 	if err != nil {
 		return false, ErrStoreUnavailable
@@ -239,18 +242,176 @@ func (s *RedisStore) RevokeSession(ctx context.Context, sessionID string) error 
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.writeTimeout)
 	defer cancel()
-	if err := s.client.Del(ctx, s.sessionKey(sessionID)).Err(); err != nil {
+
+	userID, err := s.client.HGet(ctx, s.sessionKey(sessionID), sessionFieldUserID).Result()
+	if err != nil && !errors.Is(err, redis.Nil) {
+		return ErrStoreUnavailable
+	}
+
+	pipe := s.client.TxPipeline()
+	pipe.Del(ctx, s.sessionKey(sessionID))
+	if strings.TrimSpace(userID) != "" {
+		pipe.ZRem(ctx, s.userSessionsKey(userID), sessionID)
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
 		return ErrStoreUnavailable
 	}
 	return nil
+}
+
+// Sessions returns stored, unexpired sessions for userID.
+// Sessions 返回 userID 已保存且未过期的 session。
+func (s *RedisStore) Sessions(ctx context.Context, userID string) ([]SessionInfo, error) {
+	ctx = contextutil.Require(ctx)
+	if s == nil || s.client == nil {
+		return nil, ErrStoreUnavailable
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil, nil
+	}
+
+	now := time.Now().UTC()
+	ctx, cancel := context.WithTimeout(ctx, s.readTimeout)
+	defer cancel()
+
+	key := s.userSessionsKey(userID)
+	if err := s.client.ZRemRangeByScore(ctx, key, "-inf", strconv.FormatInt(now.Unix(), 10)).Err(); err != nil {
+		return nil, ErrStoreUnavailable
+	}
+	ids, err := s.client.ZRangeByScore(ctx, key, &redis.ZRangeBy{
+		Min: "(" + strconv.FormatInt(now.Unix(), 10),
+		Max: "+inf",
+	}).Result()
+	if err != nil {
+		return nil, ErrStoreUnavailable
+	}
+
+	out := make([]SessionInfo, 0, len(ids))
+	stale := make([]any, 0)
+	for _, sessionID := range ids {
+		state, ok, err := s.sessionWithContext(ctx, sessionID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok || state.UserID != userID {
+			stale = append(stale, sessionID)
+			continue
+		}
+		out = append(out, SessionInfo{
+			ID:          sessionID,
+			ExpiresAt:   state.ExpiresAt,
+			SessionOnly: state.SessionOnly,
+		})
+	}
+	if len(stale) > 0 {
+		if err := s.client.ZRem(ctx, key, stale...).Err(); err != nil {
+			return nil, ErrStoreUnavailable
+		}
+	}
+	return out, nil
+}
+
+// ClearUserSessions removes stored sessions for userID.
+// ClearUserSessions 清理 userID 已保存的 session。
+func (s *RedisStore) ClearUserSessions(ctx context.Context, userID string) error {
+	ctx = contextutil.Require(ctx)
+	if s == nil || s.client == nil {
+		return ErrStoreUnavailable
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.writeTimeout)
+	defer cancel()
+	if err := s.clearUserSessionsWithContext(ctx, userID); err != nil {
+		return ErrStoreUnavailable
+	}
+	return nil
+}
+
+// ClearAllSessions removes all stored sessions.
+// ClearAllSessions 清理全部已保存的 session。
+func (s *RedisStore) ClearAllSessions(ctx context.Context) error {
+	ctx = contextutil.Require(ctx)
+	if s == nil || s.client == nil {
+		return ErrStoreUnavailable
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.writeTimeout)
+	defer cancel()
+	if err := s.deleteKeysByPattern(ctx, s.sessionKey("*")); err != nil {
+		return ErrStoreUnavailable
+	}
+	if err := s.deleteKeysByPattern(ctx, s.userSessionsKey("*")); err != nil {
+		return ErrStoreUnavailable
+	}
+	return nil
+}
+
+func (s *RedisStore) clearUserSessionsWithContext(ctx context.Context, userID string) error {
+	key := s.userSessionsKey(userID)
+	sessionIDs, err := s.client.ZRange(ctx, key, 0, -1).Result()
+	if err != nil {
+		return err
+	}
+	pipe := s.client.TxPipeline()
+	if len(sessionIDs) > 0 {
+		keys := make([]string, 0, len(sessionIDs))
+		for _, sessionID := range sessionIDs {
+			keys = append(keys, s.sessionKey(sessionID))
+		}
+		pipe.Del(ctx, keys...)
+	}
+	pipe.Del(ctx, key)
+	_, err = pipe.Exec(ctx)
+	return err
+}
+
+func (s *RedisStore) deleteKeysByPattern(ctx context.Context, pattern string) error {
+	var cursor uint64
+	for {
+		keys, next, err := s.client.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			return err
+		}
+		if len(keys) > 0 {
+			if err := s.client.Del(ctx, keys...).Err(); err != nil {
+				return err
+			}
+		}
+		cursor = next
+		if cursor == 0 {
+			return nil
+		}
+	}
 }
 
 func (s *RedisStore) userVersionKey(userID string) string {
 	return s.prefix + "user:" + userID + ":version"
 }
 
+func (s *RedisStore) userVersionWithContext(ctx context.Context, userID string) (int64, error) {
+	val, err := s.client.Get(ctx, s.userVersionKey(userID)).Result()
+	if errors.Is(err, redis.Nil) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, ErrStoreUnavailable
+	}
+	version, convErr := strconv.ParseInt(val, 10, 64)
+	if convErr != nil {
+		return 0, fmt.Errorf("invalid user version %q", val)
+	}
+	return version, nil
+}
+
+func (s *RedisStore) userSessionsKey(userID string) string {
+	return s.prefix + "user:" + userID + ":sessions"
+}
+
 func (s *RedisStore) sessionKey(sessionID string) string {
-	return s.prefix + "session:" + sessionID
+	return s.prefix + "sessions:" + sessionID
 }
 
 func scriptBoolResult(res any) (bool, error) {

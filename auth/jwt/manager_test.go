@@ -163,6 +163,104 @@ func TestRevokeAllSessionsInvalidatesExistingTokens(t *testing.T) {
 	if _, ok, err := mgr.ValidateRefreshToken(context.Background(), refresh); err != nil || ok {
 		t.Fatalf("expected refresh token to be invalid after revoke-all, ok=%v err=%v", ok, err)
 	}
+	sessions, err := mgr.Sessions(context.Background(), "user-1")
+	if err != nil {
+		t.Fatalf("sessions after revoke-all: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Fatalf("expected stored sessions to be cleared after revoke-all, got %#v", sessions)
+	}
+}
+
+func TestManagerSessionsListsStoredSessions(t *testing.T) {
+	mgr, err := authjwt.New("0123456789abcdef0123456789abcdef", authstore.NewMemoryStore())
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	if _, _, _, _, err := mgr.IssueSessionTokens(context.Background(), "user-1", authjwt.IssueOptions{
+		SessionOnly: true,
+	}); err != nil {
+		t.Fatalf("issue user-1 tokens: %v", err)
+	}
+	if _, _, _, _, err := mgr.IssueSessionTokens(context.Background(), "user-2", authjwt.IssueOptions{}); err != nil {
+		t.Fatalf("issue user-2 tokens: %v", err)
+	}
+
+	sessions, err := mgr.Sessions(context.Background(), "user-1")
+	if err != nil {
+		t.Fatalf("sessions: %v", err)
+	}
+	if got, want := len(sessions), 1; got != want {
+		t.Fatalf("expected %d session, got %d", want, got)
+	}
+	if sessions[0].ID == "" {
+		t.Fatal("expected session id")
+	}
+	if sessions[0].ExpiresAt.IsZero() {
+		t.Fatal("expected session expiration")
+	}
+	if !sessions[0].SessionOnly {
+		t.Fatal("expected session_only to be preserved")
+	}
+}
+
+func TestManagerClearSessions(t *testing.T) {
+	store := authstore.NewMemoryStore()
+	mgr, err := authjwt.New("0123456789abcdef0123456789abcdef", store)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	userAccess, _, _, _, err := mgr.IssueSessionTokens(context.Background(), "user-1", authjwt.IssueOptions{})
+	if err != nil {
+		t.Fatalf("issue user-1 tokens: %v", err)
+	}
+	otherAccess, _, _, _, err := mgr.IssueSessionTokens(context.Background(), "user-2", authjwt.IssueOptions{})
+	if err != nil {
+		t.Fatalf("issue user-2 tokens: %v", err)
+	}
+
+	if err := mgr.ClearUserSessions(context.Background(), "user-1"); err != nil {
+		t.Fatalf("clear user sessions: %v", err)
+	}
+	if _, ok, err := mgr.ValidateAccessToken(context.Background(), userAccess); err != nil || ok {
+		t.Fatalf("expected user-1 access token to be invalid, ok=%v err=%v", ok, err)
+	}
+	if _, ok, err := mgr.ValidateAccessToken(context.Background(), otherAccess); err != nil || !ok {
+		t.Fatalf("expected user-2 access token to remain valid, ok=%v err=%v", ok, err)
+	}
+
+	if err := mgr.ClearAllSessions(context.Background()); err != nil {
+		t.Fatalf("clear all sessions: %v", err)
+	}
+	if _, ok, err := mgr.ValidateAccessToken(context.Background(), otherAccess); err != nil || ok {
+		t.Fatalf("expected user-2 access token to be invalid after clear all, ok=%v err=%v", ok, err)
+	}
+}
+
+func TestManagerClearUserSessionsRequiresCleaner(t *testing.T) {
+	store := sessionStoreOnly{store: authstore.NewMemoryStore()}
+	mgr, err := authjwt.New("0123456789abcdef0123456789abcdef", store)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	access, _, _, _, err := mgr.IssueSessionTokens(context.Background(), "user-1", authjwt.IssueOptions{})
+	if err != nil {
+		t.Fatalf("issue tokens: %v", err)
+	}
+
+	if err := mgr.ClearUserSessions(context.Background(), "user-1"); !errors.Is(err, authjwt.ErrSessionClearUnsupported) {
+		t.Fatalf("expected ErrSessionClearUnsupported, got %v", err)
+	}
+	if _, ok, err := mgr.ValidateAccessToken(context.Background(), access); err != nil || !ok {
+		t.Fatalf("expected access token to remain valid after unsupported clear, ok=%v err=%v", ok, err)
+	}
+
+	if err := mgr.RevokeAllSessions(context.Background(), "user-1"); err != nil {
+		t.Fatalf("revoke all sessions: %v", err)
+	}
+	if _, ok, err := mgr.ValidateAccessToken(context.Background(), access); err != nil || ok {
+		t.Fatalf("expected access token to be invalid after revoke-all, ok=%v err=%v", ok, err)
+	}
 }
 
 func TestManagerRejectsMisconfiguredCalls(t *testing.T) {
@@ -176,6 +274,15 @@ func TestManagerRejectsMisconfiguredCalls(t *testing.T) {
 	}
 	if _, err := mgr.RevokeSession(context.Background(), "user-1", "sid-1"); !errors.Is(err, authjwt.ErrManagerMisconfigured) {
 		t.Fatalf("expected ErrManagerMisconfigured from RevokeSession, got %v", err)
+	}
+	if _, err := mgr.Sessions(context.Background(), "user-1"); !errors.Is(err, authjwt.ErrManagerMisconfigured) {
+		t.Fatalf("expected ErrManagerMisconfigured from Sessions, got %v", err)
+	}
+	if err := mgr.ClearUserSessions(context.Background(), "user-1"); !errors.Is(err, authjwt.ErrManagerMisconfigured) {
+		t.Fatalf("expected ErrManagerMisconfigured from ClearUserSessions, got %v", err)
+	}
+	if err := mgr.ClearAllSessions(context.Background()); !errors.Is(err, authjwt.ErrManagerMisconfigured) {
+		t.Fatalf("expected ErrManagerMisconfigured from ClearAllSessions, got %v", err)
 	}
 }
 
@@ -197,4 +304,38 @@ func TestManagerRejectsMissingIDs(t *testing.T) {
 	if err := mgr.RevokeAllSessions(context.Background(), ""); !errors.Is(err, authjwt.ErrUserIDRequired) {
 		t.Fatalf("expected ErrUserIDRequired from RevokeAllSessions, got %v", err)
 	}
+	if _, err := mgr.Sessions(context.Background(), ""); !errors.Is(err, authjwt.ErrUserIDRequired) {
+		t.Fatalf("expected ErrUserIDRequired from Sessions, got %v", err)
+	}
+	if err := mgr.ClearUserSessions(context.Background(), ""); !errors.Is(err, authjwt.ErrUserIDRequired) {
+		t.Fatalf("expected ErrUserIDRequired from ClearUserSessions, got %v", err)
+	}
+}
+
+type sessionStoreOnly struct {
+	store *authstore.MemoryStore
+}
+
+func (s sessionStoreOnly) UserVersion(ctx context.Context, userID string) (int64, error) {
+	return s.store.UserVersion(ctx, userID)
+}
+
+func (s sessionStoreOnly) BumpUserVersion(ctx context.Context, userID string) (int64, error) {
+	return s.store.BumpUserVersion(ctx, userID)
+}
+
+func (s sessionStoreOnly) CreateSession(ctx context.Context, sessionID string, state authstore.SessionState) error {
+	return s.store.CreateSession(ctx, sessionID, state)
+}
+
+func (s sessionStoreOnly) Session(ctx context.Context, sessionID string) (authstore.SessionState, bool, error) {
+	return s.store.Session(ctx, sessionID)
+}
+
+func (s sessionStoreOnly) RotateRefresh(ctx context.Context, sessionID, userID string, expectedVersion int64, oldRefreshID, newRefreshID string, exp time.Time) (bool, error) {
+	return s.store.RotateRefresh(ctx, sessionID, userID, expectedVersion, oldRefreshID, newRefreshID, exp)
+}
+
+func (s sessionStoreOnly) RevokeSession(ctx context.Context, sessionID string) error {
+	return s.store.RevokeSession(ctx, sessionID)
 }

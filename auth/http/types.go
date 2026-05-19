@@ -60,3 +60,14 @@ type refreshResponse struct {
 	ExpiresAt   string `json:"expires_at"`
 	CSRFToken   string `json:"csrf_token"`
 }
+
+type sessionResponse struct {
+	ID          string `json:"id"`
+	ExpiresAt   string `json:"expires_at"`
+	SessionOnly bool   `json:"session_only"`
+	Current     bool   `json:"current"`
+}
+
+type sessionsResponse struct {
+	Sessions []sessionResponse `json:"sessions"`
+}

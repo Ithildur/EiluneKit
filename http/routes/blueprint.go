@@ -337,6 +337,13 @@ func (b *Blueprint) ExportMarkdown() (string, error) {
 	return ExportMarkdown(b.routes)
 }
 
+// ExportOpenAPI exports route metadata as OpenAPI 3.0 JSON.
+// ExportOpenAPI 将路由元数据导出为 OpenAPI 3.0 JSON。
+func (b *Blueprint) ExportOpenAPI(opts OpenAPIOptions) ([]byte, error) {
+	b = requireBlueprint(b)
+	return ExportOpenAPI(b.routes, opts)
+}
+
 func requireBlueprint(b *Blueprint) *Blueprint {
 	if b == nil {
 		panic("routes: nil Blueprint")

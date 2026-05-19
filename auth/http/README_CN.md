@@ -107,11 +107,14 @@ header 名为空时默认使用 `X-API-Key`。
 | `POST /auth/login` | `public` | 登录限流、请求体限制、JSON body |
 | `POST /auth/refresh` | `required` | refresh-cookie + CSRF |
 | `POST /auth/logout` | `required` | refresh-cookie + CSRF |
+| `GET /auth/sessions` | `required` | `RequireBearer` |
 | `DELETE /auth/sessions/current` | `required` | `RequireBearer` |
 | `DELETE /auth/sessions` | `required` | `RequireBearer` |
 | `DELETE /auth/sessions/{sid}` | `required` | `RequireBearer` |
 
 `Handler.Routes()` 会返回同一组 `http/routes.Route`。返回的路由已经包含各自的认证中间件。
+`GET /auth/sessions` 要求 manager 实现 `auth.SessionLister`；`auth/jwt.Manager` 在 store 支持 session listing 时支持该接口。
+`DELETE /auth/sessions` 会吊销当前用户的 session；manager 支持清理时也会清理已保存的 session 记录。
 
 ```go
 routeList := authHandler.Routes()

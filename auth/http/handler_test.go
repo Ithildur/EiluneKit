@@ -44,6 +44,10 @@ type stubManager struct {
 	revokeAllErr        error
 	revokeAllUserID     string
 
+	sessions       []authcore.SessionInfo
+	sessionsErr    error
+	sessionsUserID string
+
 	validateAccessClaims authjwt.Claims
 	validateAccessOK     bool
 	validateAccessErr    error
@@ -74,6 +78,11 @@ func (s *stubManager) RevokeSession(ctx context.Context, userID, sessionID strin
 func (s *stubManager) RevokeAllSessions(ctx context.Context, userID string) error {
 	s.revokeAllUserID = userID
 	return s.revokeAllErr
+}
+
+func (s *stubManager) Sessions(ctx context.Context, userID string) ([]authcore.SessionInfo, error) {
+	s.sessionsUserID = userID
+	return append([]authcore.SessionInfo(nil), s.sessions...), s.sessionsErr
 }
 
 func (s *stubManager) ValidateAccessToken(ctx context.Context, token string) (authjwt.Claims, bool, error) {
@@ -562,6 +571,59 @@ func TestRefresh(t *testing.T) {
 }
 
 func TestSessionEndpoints(t *testing.T) {
+	t.Run("list_sessions", func(t *testing.T) {
+		exp := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+		manager := authenticatedManager()
+		manager.sessions = []authcore.SessionInfo{
+			{ID: "sid-1", ExpiresAt: exp, SessionOnly: true},
+			{ID: "sid-2", ExpiresAt: exp.Add(time.Hour)},
+		}
+		r := mustNewTestRouter(t, manager, testOptions(stubAuthenticator("admin", "secret", "user-1")))
+
+		rec := serve(r, http.MethodGet, "/auth/sessions", "", func(req *http.Request) {
+			req.Header.Set("Authorization", "Bearer access")
+		})
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+		}
+		if manager.sessionsUserID != "user-1" {
+			t.Fatalf("expected sessions for user-1, got %q", manager.sessionsUserID)
+		}
+		var payload struct {
+			Sessions []struct {
+				ID          string `json:"id"`
+				ExpiresAt   string `json:"expires_at"`
+				SessionOnly bool   `json:"session_only"`
+				Current     bool   `json:"current"`
+			} `json:"sessions"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("unmarshal sessions response: %v", err)
+		}
+		if got, want := len(payload.Sessions), 2; got != want {
+			t.Fatalf("expected %d sessions, got %d", want, got)
+		}
+		if payload.Sessions[0].ID != "sid-1" || !payload.Sessions[0].Current || !payload.Sessions[0].SessionOnly {
+			t.Fatalf("unexpected current session: %#v", payload.Sessions[0])
+		}
+		if got, want := payload.Sessions[0].ExpiresAt, exp.Format(time.RFC3339); got != want {
+			t.Fatalf("expected expiration %q, got %q", want, got)
+		}
+	})
+
+	t.Run("list_sessions_unsupported", func(t *testing.T) {
+		manager := authenticatedManager()
+		manager.sessionsErr = authcore.ErrSessionListUnsupported
+		r := mustNewTestRouter(t, manager, testOptions(stubAuthenticator("admin", "secret", "user-1")))
+
+		rec := serve(r, http.MethodGet, "/auth/sessions", "", func(req *http.Request) {
+			req.Header.Set("Authorization", "Bearer access")
+		})
+
+		assertErrorResponse(t, rec, http.StatusNotImplemented, "session_list_unsupported", "session listing is unsupported")
+	})
+
 	t.Run("logout_clears_cookies", func(t *testing.T) {
 		r := mustNewTestRouter(t, &stubManager{}, testOptions(stubAuthenticator("admin", "secret", "user-1")))
 

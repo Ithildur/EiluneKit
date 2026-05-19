@@ -1,12 +1,14 @@
 -- Rotate session refresh state atomically.
 -- KEYS[1] = user version key
 -- KEYS[2] = session key
+-- KEYS[3] = user sessions key
 -- ARGV[1] = expected user version
 -- ARGV[2] = expected user id
 -- ARGV[3] = old refresh id
 -- ARGV[4] = new refresh id
 -- ARGV[5] = new expiration unix seconds
 -- ARGV[6] = new TTL in ms
+-- ARGV[7] = session id
 
 local version = redis.call("GET", KEYS[1])
 if not version then
@@ -36,4 +38,5 @@ redis.call("HSET", KEYS[2],
   "expires_at", ARGV[5]
 )
 redis.call("PEXPIRE", KEYS[2], ttl)
+redis.call("ZADD", KEYS[3], ARGV[5], ARGV[7])
 return 1
