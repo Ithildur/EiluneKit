@@ -279,9 +279,11 @@ func (s *RedisStore) Sessions(ctx context.Context, userID string) ([]SessionInfo
 	if err := s.client.ZRemRangeByScore(ctx, key, "-inf", strconv.FormatInt(now.Unix(), 10)).Err(); err != nil {
 		return nil, ErrStoreUnavailable
 	}
-	ids, err := s.client.ZRangeByScore(ctx, key, &redis.ZRangeBy{
-		Min: "(" + strconv.FormatInt(now.Unix(), 10),
-		Max: "+inf",
+	ids, err := s.client.ZRangeArgs(ctx, redis.ZRangeArgs{
+		Key:     key,
+		Start:   "(" + strconv.FormatInt(now.Unix(), 10),
+		Stop:    "+inf",
+		ByScore: true,
 	}).Result()
 	if err != nil {
 		return nil, ErrStoreUnavailable

@@ -156,14 +156,3 @@ func normalizePath(p string) string {
 	}
 	return p
 }
-
-func joinPath(base, suffix string) string {
-	base = normalizePath(base)
-	if base == "/" {
-		return normalizePath(suffix)
-	}
-	if !strings.HasPrefix(suffix, "/") {
-		suffix = "/" + suffix
-	}
-	return base + suffix
-}
