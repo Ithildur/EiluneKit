@@ -30,12 +30,5 @@ jobs:
       - name: Race
         run: go test -race ./...
 
-      - name: Setup Go for Govulncheck
-        uses: actions/setup-go@v6
-        with:
-          go-version: stable
-          check-latest: true
-          cache: false
-
       - name: Govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...
