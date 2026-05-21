@@ -1,6 +1,6 @@
 # EiluneKit
 
-Chinese: `README_CN.md`.
+**Resources:** [中文](README_CN.md).
 
 EiluneKit is a small Go toolkit for auth, HTTP services, Postgres, Redis, logging, and narrow runtime helpers. Import the packages you need; there is no central framework.
 
@@ -10,7 +10,7 @@ EiluneKit is a small Go toolkit for auth, HTTP services, Postgres, Redis, loggin
 go get github.com/Ithildur/EiluneKit@latest
 ```
 
-Requires Go 1.25.
+Requires Go 1.25.0 or newer.
 
 ## Design
 
@@ -33,7 +33,8 @@ Start with the package docs:
 - `auth/http`: auth handlers, bearer middleware, login rate limiting, and session revocation endpoints
 - `auth/jwt`: access and refresh JWT issuance backed by `auth/store`
 - `auth/session`: cookie and CSRF helpers
-- `auth/store`: session and token state stores for memory and Redis
+- `auth/store`: session and token state interfaces and memory store
+- `auth/store/redissession`: Redis-backed auth session store
 - `http/decoder`: JSON request decoding helpers
 - `http/middleware`: JSON-only guards, access logging, rate limits, and 404/405 helpers
 - `http/response`: JSON response helpers
