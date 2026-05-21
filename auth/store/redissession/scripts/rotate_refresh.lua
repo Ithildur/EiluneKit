@@ -9,6 +9,9 @@
 -- ARGV[5] = new expiration unix seconds
 -- ARGV[6] = new TTL in ms
 -- ARGV[7] = session id
+-- ARGV[8] = index TTL grace in ms
+-- ARGV[9] = now unix seconds
+-- ARGV[10] = now unix ms
 
 local version = redis.call("GET", KEYS[1])
 if not version then
@@ -37,6 +40,13 @@ redis.call("HSET", KEYS[2],
   "refresh_id", ARGV[4],
   "expires_at", ARGV[5]
 )
+-- Refresh rotation preserves the existing session_only field.
+-- Refresh 轮换保留既有 session_only 字段。
 redis.call("PEXPIRE", KEYS[2], ttl)
+
+redis.call("ZREMRANGEBYSCORE", KEYS[3], "-inf", ARGV[9])
 redis.call("ZADD", KEYS[3], ARGV[5], ARGV[7])
+
+local max = redis.call("ZREVRANGE", KEYS[3], 0, 0, "WITHSCORES")
+redis.call("PEXPIRE", KEYS[3], tonumber(max[2]) * 1000 + tonumber(ARGV[8]) - tonumber(ARGV[10]))
 return 1

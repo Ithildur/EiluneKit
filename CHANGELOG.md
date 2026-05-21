@@ -5,6 +5,7 @@
 ### Breaking
 
 - Redis-backed auth sessions now use `sessions:` keys instead of `session:` keys. Existing refresh sessions stored with the old layout are not read by the new flow, so users may need to sign in again. Old keys expire by their existing TTL.
+- Redis-backed auth session storage moved from `auth/store` to `auth/store/redissession`; callers now construct it with `redissession.New` and `redissession.Options`.
 
 ### Added
 
@@ -15,4 +16,4 @@
 
 ### Changed
 
-- Updated the documented Go requirement to Go 1.25.
+- Updated the documented Go requirement to Go 1.25.0.

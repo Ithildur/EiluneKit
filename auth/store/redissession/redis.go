@@ -1,4 +1,6 @@
-package store
+// Package redissession provides Redis-backed auth session storage.
+// Package redissession 提供 Redis 版认证 session 存储。
+package redissession
 
 import (
 	"context"
@@ -9,14 +11,16 @@ import (
 	"strings"
 	"time"
 
+	authstore "github.com/Ithildur/EiluneKit/auth/store"
 	"github.com/Ithildur/EiluneKit/contextutil"
 
 	"github.com/redis/go-redis/v9"
 )
 
 const (
-	defaultReadTimeout  = 3 * time.Second
-	defaultWriteTimeout = 3 * time.Second
+	defaultReadTimeout   = 3 * time.Second
+	defaultWriteTimeout  = 3 * time.Second
+	sessionIndexTTLGrace = time.Minute
 )
 
 const (
@@ -26,9 +30,9 @@ const (
 	sessionFieldSessionOnly = "session_only"
 )
 
-// RedisStore stores sessions in Redis.
-// RedisStore 在 Redis 中保存 session。
-type RedisStore struct {
+// Store stores sessions in Redis.
+// Store 在 Redis 中保存 session。
+type Store struct {
 	client       *redis.Client
 	prefix       string
 	writeTimeout time.Duration
@@ -36,28 +40,40 @@ type RedisStore struct {
 }
 
 var (
-	_ SessionStore       = (*RedisStore)(nil)
-	_ SessionLister      = (*RedisStore)(nil)
-	_ UserSessionCleaner = (*RedisStore)(nil)
-	_ SessionCleaner     = (*RedisStore)(nil)
+	_ authstore.SessionStore       = (*Store)(nil)
+	_ authstore.SessionLister      = (*Store)(nil)
+	_ authstore.UserSessionCleaner = (*Store)(nil)
+	_ authstore.SessionCleaner     = (*Store)(nil)
 )
 
-// RedisOptions configures NewRedisStore.
-// RedisOptions 配置 NewRedisStore。
-type RedisOptions struct {
+// Options configures New.
+// Options 配置 New。
+type Options struct {
 	Prefix       string
 	WriteTimeout time.Duration
 	ReadTimeout  time.Duration
 }
 
+//go:embed scripts/create_session.lua
+var createSessionLua string
+
+//go:embed scripts/revoke_session.lua
+var revokeSessionLua string
+
 //go:embed scripts/rotate_refresh.lua
 var rotateRefreshLua string
 
-var rotateRefreshScript = redis.NewScript(rotateRefreshLua)
+//go:embed scripts/trim_session_index.lua
+var trimSessionIndexLua string
 
-// NewRedisStore returns a Redis-backed SessionStore.
-// NewRedisStore 返回 Redis 版 SessionStore。
-func NewRedisStore(client *redis.Client, opts RedisOptions) *RedisStore {
+var createSessionScript = redis.NewScript(createSessionLua)
+var revokeSessionScript = redis.NewScript(revokeSessionLua)
+var rotateRefreshScript = redis.NewScript(rotateRefreshLua)
+var trimSessionIndexScript = redis.NewScript(trimSessionIndexLua)
+
+// New returns a Redis-backed session store.
+// New 返回 Redis 版 session store。
+func New(client *redis.Client, opts Options) *Store {
 	prefix := opts.Prefix
 	if prefix == "" {
 		prefix = "auth:jwt:"
@@ -70,7 +86,7 @@ func NewRedisStore(client *redis.Client, opts RedisOptions) *RedisStore {
 	if writeTimeout <= 0 {
 		writeTimeout = defaultWriteTimeout
 	}
-	return &RedisStore{
+	return &Store{
 		client:       client,
 		prefix:       prefix,
 		writeTimeout: writeTimeout,
@@ -80,10 +96,10 @@ func NewRedisStore(client *redis.Client, opts RedisOptions) *RedisStore {
 
 // UserVersion returns the current version for userID.
 // UserVersion 返回 userID 的当前版本。
-func (s *RedisStore) UserVersion(ctx context.Context, userID string) (int64, error) {
+func (s *Store) UserVersion(ctx context.Context, userID string) (int64, error) {
 	ctx = contextutil.Require(ctx)
 	if s == nil || s.client == nil {
-		return 0, ErrStoreUnavailable
+		return 0, authstore.ErrStoreUnavailable
 	}
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
@@ -96,10 +112,10 @@ func (s *RedisStore) UserVersion(ctx context.Context, userID string) (int64, err
 
 // BumpUserVersion invalidates all sessions for userID.
 // BumpUserVersion 通过提升版本使 userID 的全部 session 失效。
-func (s *RedisStore) BumpUserVersion(ctx context.Context, userID string) (int64, error) {
+func (s *Store) BumpUserVersion(ctx context.Context, userID string) (int64, error) {
 	ctx = contextutil.Require(ctx)
 	if s == nil || s.client == nil {
-		return 0, ErrStoreUnavailable
+		return 0, authstore.ErrStoreUnavailable
 	}
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
@@ -109,17 +125,17 @@ func (s *RedisStore) BumpUserVersion(ctx context.Context, userID string) (int64,
 	defer cancel()
 	version, err := s.client.Incr(ctx, s.userVersionKey(userID)).Result()
 	if err != nil {
-		return 0, ErrStoreUnavailable
+		return 0, authstore.ErrStoreUnavailable
 	}
 	return version, nil
 }
 
 // CreateSession stores a session.
 // CreateSession 保存 session。
-func (s *RedisStore) CreateSession(ctx context.Context, sessionID string, state SessionState) error {
+func (s *Store) CreateSession(ctx context.Context, sessionID string, state authstore.SessionState) error {
 	ctx = contextutil.Require(ctx)
 	if s == nil || s.client == nil {
-		return ErrStoreUnavailable
+		return authstore.ErrStoreUnavailable
 	}
 	sessionID = strings.TrimSpace(sessionID)
 	state.UserID = strings.TrimSpace(state.UserID)
@@ -127,76 +143,87 @@ func (s *RedisStore) CreateSession(ctx context.Context, sessionID string, state 
 	if sessionID == "" || state.UserID == "" || state.RefreshID == "" || state.ExpiresAt.IsZero() {
 		return errors.New("session state is incomplete")
 	}
-	ttl := time.Until(state.ExpiresAt)
+	now := time.Now().UTC()
+	ttl := state.ExpiresAt.Sub(now)
 	if ttl <= 0 {
 		return errors.New("session already expired")
 	}
+	ttlMS := ceilTTLMilliseconds(ttl)
 	ctx, cancel := context.WithTimeout(ctx, s.writeTimeout)
 	defer cancel()
-	pipe := s.client.TxPipeline()
-	pipe.HSet(ctx, s.sessionKey(sessionID), map[string]any{
-		sessionFieldUserID:      state.UserID,
-		sessionFieldRefreshID:   state.RefreshID,
-		sessionFieldExpiresAt:   strconv.FormatInt(state.ExpiresAt.UTC().Unix(), 10),
-		sessionFieldSessionOnly: strconv.FormatBool(state.SessionOnly),
-	})
-	pipe.PExpire(ctx, s.sessionKey(sessionID), ttl)
-	pipe.ZAdd(ctx, s.userSessionsKey(state.UserID), redis.Z{
-		Score:  float64(state.ExpiresAt.UTC().Unix()),
-		Member: sessionID,
-	})
-	if _, err := pipe.Exec(ctx); err != nil {
-		return ErrStoreUnavailable
+	res, err := createSessionScript.Run(
+		ctx,
+		s.client,
+		[]string{s.sessionKey(sessionID), s.userSessionsKey(state.UserID)},
+		state.UserID,
+		state.RefreshID,
+		state.ExpiresAt.UTC().Unix(),
+		strconv.FormatBool(state.SessionOnly),
+		ttlMS,
+		sessionID,
+		sessionIndexTTLGrace.Milliseconds(),
+		now.Unix(),
+		now.UnixMilli(),
+	).Result()
+	if err != nil {
+		return authstore.ErrStoreUnavailable
+	}
+	created, err := scriptBoolResult(res)
+	if err != nil {
+		return err
+	}
+	if !created {
+		return errors.New("session already expired")
 	}
 	return nil
 }
 
 // Session returns the session when still active.
 // Session 返回仍然活跃的 session。
-func (s *RedisStore) Session(ctx context.Context, sessionID string) (SessionState, bool, error) {
+func (s *Store) Session(ctx context.Context, sessionID string) (authstore.SessionState, bool, error) {
 	ctx = contextutil.Require(ctx)
 	if s == nil || s.client == nil {
-		return SessionState{}, false, ErrStoreUnavailable
+		return authstore.SessionState{}, false, authstore.ErrStoreUnavailable
 	}
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
-		return SessionState{}, false, nil
+		return authstore.SessionState{}, false, nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.readTimeout)
 	defer cancel()
 	return s.sessionWithContext(ctx, sessionID)
 }
 
-func (s *RedisStore) sessionWithContext(ctx context.Context, sessionID string) (SessionState, bool, error) {
+func (s *Store) sessionWithContext(ctx context.Context, sessionID string) (authstore.SessionState, bool, error) {
 	values, err := s.client.HGetAll(ctx, s.sessionKey(sessionID)).Result()
 	if err != nil {
-		return SessionState{}, false, ErrStoreUnavailable
+		return authstore.SessionState{}, false, authstore.ErrStoreUnavailable
 	}
 	if len(values) == 0 {
-		return SessionState{}, false, nil
+		return authstore.SessionState{}, false, nil
 	}
 	expUnix, convErr := strconv.ParseInt(values[sessionFieldExpiresAt], 10, 64)
 	if convErr != nil {
-		return SessionState{}, false, fmt.Errorf("invalid session expiration %q", values[sessionFieldExpiresAt])
+		return authstore.SessionState{}, false, fmt.Errorf("invalid session expiration %q", values[sessionFieldExpiresAt])
 	}
-	state := SessionState{
+	state := authstore.SessionState{
 		UserID:      values[sessionFieldUserID],
 		RefreshID:   values[sessionFieldRefreshID],
 		ExpiresAt:   time.Unix(expUnix, 0).UTC(),
 		SessionOnly: strings.EqualFold(values[sessionFieldSessionOnly], "true"),
 	}
 	if state.UserID == "" || state.RefreshID == "" {
-		return SessionState{}, false, nil
+		return authstore.SessionState{}, false, nil
 	}
 	return state, true, nil
 }
 
 // RotateRefresh replaces the refresh state for a session.
 // RotateRefresh 替换某个 session 的 refresh 状态。
-func (s *RedisStore) RotateRefresh(ctx context.Context, sessionID, userID string, expectedVersion int64, oldRefreshID, newRefreshID string, exp time.Time) (bool, error) {
+func (s *Store) RotateRefresh(ctx context.Context, sessionID, userID string, expectedVersion int64, oldRefreshID, newRefreshID string, exp time.Time) (bool, error) {
 	ctx = contextutil.Require(ctx)
 	if s == nil || s.client == nil {
-		return false, ErrStoreUnavailable
+		return false, authstore.ErrStoreUnavailable
 	}
 	sessionID = strings.TrimSpace(sessionID)
 	userID = strings.TrimSpace(userID)
@@ -205,10 +232,12 @@ func (s *RedisStore) RotateRefresh(ctx context.Context, sessionID, userID string
 	if sessionID == "" || userID == "" || oldRefreshID == "" || newRefreshID == "" || exp.IsZero() {
 		return false, nil
 	}
-	ttl := time.Until(exp)
+	now := time.Now().UTC()
+	ttl := exp.Sub(now)
 	if ttl <= 0 {
 		return false, errors.New("session already expired")
 	}
+	ttlMS := ceilTTLMilliseconds(ttl)
 	ctx, cancel := context.WithTimeout(ctx, s.writeTimeout)
 	defer cancel()
 	res, err := rotateRefreshScript.Run(
@@ -220,21 +249,24 @@ func (s *RedisStore) RotateRefresh(ctx context.Context, sessionID, userID string
 		oldRefreshID,
 		newRefreshID,
 		exp.UTC().Unix(),
-		ttl.Milliseconds(),
+		ttlMS,
 		sessionID,
+		sessionIndexTTLGrace.Milliseconds(),
+		now.Unix(),
+		now.UnixMilli(),
 	).Result()
 	if err != nil {
-		return false, ErrStoreUnavailable
+		return false, authstore.ErrStoreUnavailable
 	}
 	return scriptBoolResult(res)
 }
 
 // RevokeSession deletes a session.
 // RevokeSession 删除 session。
-func (s *RedisStore) RevokeSession(ctx context.Context, sessionID string) error {
+func (s *Store) RevokeSession(ctx context.Context, sessionID string) error {
 	ctx = contextutil.Require(ctx)
 	if s == nil || s.client == nil {
-		return ErrStoreUnavailable
+		return authstore.ErrStoreUnavailable
 	}
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
@@ -245,26 +277,38 @@ func (s *RedisStore) RevokeSession(ctx context.Context, sessionID string) error 
 
 	userID, err := s.client.HGet(ctx, s.sessionKey(sessionID), sessionFieldUserID).Result()
 	if err != nil && !errors.Is(err, redis.Nil) {
-		return ErrStoreUnavailable
+		return authstore.ErrStoreUnavailable
 	}
 
-	pipe := s.client.TxPipeline()
-	pipe.Del(ctx, s.sessionKey(sessionID))
-	if strings.TrimSpace(userID) != "" {
-		pipe.ZRem(ctx, s.userSessionsKey(userID), sessionID)
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		if err := s.client.Del(ctx, s.sessionKey(sessionID)).Err(); err != nil {
+			return authstore.ErrStoreUnavailable
+		}
+		return nil
 	}
-	if _, err := pipe.Exec(ctx); err != nil {
-		return ErrStoreUnavailable
+
+	now := time.Now().UTC()
+	if _, err := revokeSessionScript.Run(
+		ctx,
+		s.client,
+		[]string{s.sessionKey(sessionID), s.userSessionsKey(userID)},
+		sessionID,
+		sessionIndexTTLGrace.Milliseconds(),
+		now.Unix(),
+		now.UnixMilli(),
+	).Result(); err != nil {
+		return authstore.ErrStoreUnavailable
 	}
 	return nil
 }
 
 // Sessions returns stored, unexpired sessions for userID.
 // Sessions 返回 userID 已保存且未过期的 session。
-func (s *RedisStore) Sessions(ctx context.Context, userID string) ([]SessionInfo, error) {
+func (s *Store) Sessions(ctx context.Context, userID string) ([]authstore.SessionInfo, error) {
 	ctx = contextutil.Require(ctx)
 	if s == nil || s.client == nil {
-		return nil, ErrStoreUnavailable
+		return nil, authstore.ErrStoreUnavailable
 	}
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
@@ -276,8 +320,8 @@ func (s *RedisStore) Sessions(ctx context.Context, userID string) ([]SessionInfo
 	defer cancel()
 
 	key := s.userSessionsKey(userID)
-	if err := s.client.ZRemRangeByScore(ctx, key, "-inf", strconv.FormatInt(now.Unix(), 10)).Err(); err != nil {
-		return nil, ErrStoreUnavailable
+	if err := s.trimSessionIndexWithContext(ctx, key, now); err != nil {
+		return nil, authstore.ErrStoreUnavailable
 	}
 	ids, err := s.client.ZRangeArgs(ctx, redis.ZRangeArgs{
 		Key:     key,
@@ -286,11 +330,11 @@ func (s *RedisStore) Sessions(ctx context.Context, userID string) ([]SessionInfo
 		ByScore: true,
 	}).Result()
 	if err != nil {
-		return nil, ErrStoreUnavailable
+		return nil, authstore.ErrStoreUnavailable
 	}
 
-	out := make([]SessionInfo, 0, len(ids))
-	stale := make([]any, 0)
+	out := make([]authstore.SessionInfo, 0, len(ids))
+	stale := make([]string, 0)
 	for _, sessionID := range ids {
 		state, ok, err := s.sessionWithContext(ctx, sessionID)
 		if err != nil {
@@ -300,15 +344,15 @@ func (s *RedisStore) Sessions(ctx context.Context, userID string) ([]SessionInfo
 			stale = append(stale, sessionID)
 			continue
 		}
-		out = append(out, SessionInfo{
+		out = append(out, authstore.SessionInfo{
 			ID:          sessionID,
 			ExpiresAt:   state.ExpiresAt,
 			SessionOnly: state.SessionOnly,
 		})
 	}
 	if len(stale) > 0 {
-		if err := s.client.ZRem(ctx, key, stale...).Err(); err != nil {
-			return nil, ErrStoreUnavailable
+		if err := s.trimSessionIndexWithContext(ctx, key, now, stale...); err != nil {
+			return nil, authstore.ErrStoreUnavailable
 		}
 	}
 	return out, nil
@@ -316,10 +360,10 @@ func (s *RedisStore) Sessions(ctx context.Context, userID string) ([]SessionInfo
 
 // ClearUserSessions removes stored sessions for userID.
 // ClearUserSessions 清理 userID 已保存的 session。
-func (s *RedisStore) ClearUserSessions(ctx context.Context, userID string) error {
+func (s *Store) ClearUserSessions(ctx context.Context, userID string) error {
 	ctx = contextutil.Require(ctx)
 	if s == nil || s.client == nil {
-		return ErrStoreUnavailable
+		return authstore.ErrStoreUnavailable
 	}
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
@@ -328,30 +372,30 @@ func (s *RedisStore) ClearUserSessions(ctx context.Context, userID string) error
 	ctx, cancel := context.WithTimeout(ctx, s.writeTimeout)
 	defer cancel()
 	if err := s.clearUserSessionsWithContext(ctx, userID); err != nil {
-		return ErrStoreUnavailable
+		return authstore.ErrStoreUnavailable
 	}
 	return nil
 }
 
 // ClearAllSessions removes all stored sessions.
 // ClearAllSessions 清理全部已保存的 session。
-func (s *RedisStore) ClearAllSessions(ctx context.Context) error {
+func (s *Store) ClearAllSessions(ctx context.Context) error {
 	ctx = contextutil.Require(ctx)
 	if s == nil || s.client == nil {
-		return ErrStoreUnavailable
+		return authstore.ErrStoreUnavailable
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.writeTimeout)
 	defer cancel()
 	if err := s.deleteKeysByPattern(ctx, s.sessionKey("*")); err != nil {
-		return ErrStoreUnavailable
+		return authstore.ErrStoreUnavailable
 	}
 	if err := s.deleteKeysByPattern(ctx, s.userSessionsKey("*")); err != nil {
-		return ErrStoreUnavailable
+		return authstore.ErrStoreUnavailable
 	}
 	return nil
 }
 
-func (s *RedisStore) clearUserSessionsWithContext(ctx context.Context, userID string) error {
+func (s *Store) clearUserSessionsWithContext(ctx context.Context, userID string) error {
 	key := s.userSessionsKey(userID)
 	sessionIDs, err := s.client.ZRange(ctx, key, 0, -1).Result()
 	if err != nil {
@@ -370,7 +414,7 @@ func (s *RedisStore) clearUserSessionsWithContext(ctx context.Context, userID st
 	return err
 }
 
-func (s *RedisStore) deleteKeysByPattern(ctx context.Context, pattern string) error {
+func (s *Store) deleteKeysByPattern(ctx context.Context, pattern string) error {
 	var cursor uint64
 	for {
 		keys, next, err := s.client.Scan(ctx, cursor, pattern, 100).Result()
@@ -389,17 +433,17 @@ func (s *RedisStore) deleteKeysByPattern(ctx context.Context, pattern string) er
 	}
 }
 
-func (s *RedisStore) userVersionKey(userID string) string {
+func (s *Store) userVersionKey(userID string) string {
 	return s.prefix + "user:" + userID + ":version"
 }
 
-func (s *RedisStore) userVersionWithContext(ctx context.Context, userID string) (int64, error) {
+func (s *Store) userVersionWithContext(ctx context.Context, userID string) (int64, error) {
 	val, err := s.client.Get(ctx, s.userVersionKey(userID)).Result()
 	if errors.Is(err, redis.Nil) {
 		return 0, nil
 	}
 	if err != nil {
-		return 0, ErrStoreUnavailable
+		return 0, authstore.ErrStoreUnavailable
 	}
 	version, convErr := strconv.ParseInt(val, 10, 64)
 	if convErr != nil {
@@ -408,12 +452,22 @@ func (s *RedisStore) userVersionWithContext(ctx context.Context, userID string) 
 	return version, nil
 }
 
-func (s *RedisStore) userSessionsKey(userID string) string {
+func (s *Store) userSessionsKey(userID string) string {
 	return s.prefix + "user:" + userID + ":sessions"
 }
 
-func (s *RedisStore) sessionKey(sessionID string) string {
+func (s *Store) sessionKey(sessionID string) string {
 	return s.prefix + "sessions:" + sessionID
+}
+
+func (s *Store) trimSessionIndexWithContext(ctx context.Context, key string, now time.Time, sessionIDs ...string) error {
+	args := make([]any, 0, 3+len(sessionIDs))
+	args = append(args, sessionIndexTTLGrace.Milliseconds(), now.Unix(), now.UnixMilli())
+	for _, sessionID := range sessionIDs {
+		args = append(args, sessionID)
+	}
+	_, err := trimSessionIndexScript.Run(ctx, s.client, []string{key}, args...).Result()
+	return err
 }
 
 func scriptBoolResult(res any) (bool, error) {
@@ -427,4 +481,15 @@ func scriptBoolResult(res any) (bool, error) {
 	default:
 		return false, fmt.Errorf("unexpected script result type %T", res)
 	}
+}
+
+func ceilTTLMilliseconds(ttl time.Duration) int64 {
+	if ttl <= 0 {
+		return 0
+	}
+	ms := ttl / time.Millisecond
+	if ttl%time.Millisecond != 0 {
+		ms++
+	}
+	return int64(ms)
 }
