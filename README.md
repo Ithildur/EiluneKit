@@ -20,6 +20,37 @@ Requires Go 1.25.10 or newer.
 
 ## Usage
 
+Minimal single-process auth setup without Redis or Postgres:
+
+```go
+store := authstore.NewMemoryStore()
+
+manager, err := authjwt.New(signingKey, store)
+if err != nil {
+	return err
+}
+
+login, err := authhttp.NewStaticPassword("dashboard-admin", adminPassword)
+if err != nil {
+	return err
+}
+
+authHandler, err := authhttp.NewHandler(manager, authhttp.Options{
+	LoginAuthenticator: login,
+})
+if err != nil {
+	return err
+}
+
+if err := authHandler.Register(r); err != nil {
+	return err
+}
+```
+
+Static password auth ignores the request username and returns the configured user ID when the password matches. `POST /auth/login` still requires `persistence` with `session` or `persistent`.
+
+This uses in-process session storage for one process; sessions are not shared across instances and do not survive process restarts.
+
 Start with the package docs:
 
 - `http/routes/README.md`: route declarations, `Blueprint`, and lower-level `Route`/`Mount`

@@ -20,6 +20,37 @@ go get github.com/Ithildur/EiluneKit@latest
 
 ## 使用
 
+不使用 Redis 或 Postgres 的单进程最小认证组合：
+
+```go
+store := authstore.NewMemoryStore()
+
+manager, err := authjwt.New(signingKey, store)
+if err != nil {
+	return err
+}
+
+login, err := authhttp.NewStaticPassword("dashboard-admin", adminPassword)
+if err != nil {
+	return err
+}
+
+authHandler, err := authhttp.NewHandler(manager, authhttp.Options{
+	LoginAuthenticator: login,
+})
+if err != nil {
+	return err
+}
+
+if err := authHandler.Register(r); err != nil {
+	return err
+}
+```
+
+固定口令认证会忽略请求中的 username；密码匹配时返回配置的 user ID。`POST /auth/login` 仍必须提供 `persistence`，取值为 `session` 或 `persistent`。
+
+该组合使用单进程内 session store；多实例之间不共享 session，进程重启后 session 会失效。
+
 从包文档开始：
 
 - `http/routes/README_CN.md`：路由声明、`Blueprint` 和更底层的 `Route`/`Mount`
