@@ -132,6 +132,8 @@ err := routes.Mount(r, "", routeList)
 - `TrustedProxies`：登录限流和安全 cookie 协议判断使用的转发代理信任边界
 - `MaxBodyBytes`：认证端点请求体大小限制
 - `RateLimit`：登录限流配置
+- `Events`：认证生命周期 hook。`Events.Login` 在凭据通过且 token 已签发后、cookie 和响应体写出前执行；返回错误会尝试吊销新的 refresh session 并让登录请求失败。hook 可能并发调用。
+- `Logger`：可选 `*slog.Logger`，用于记录认证生命周期 hook 失败和补偿吊销失败。
 
 只有设置 `TrustedProxies` 才信任转发头。默认限流 key 使用 `RemoteAddr`。
 

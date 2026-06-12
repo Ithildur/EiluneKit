@@ -6,9 +6,11 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,6 +31,7 @@ type stubManager struct {
 	issueAccessExp   time.Time
 	issueRefreshExp  time.Time
 	issueErr         error
+	issueCalls       int
 	issueLastUserID  string
 	issueLastOptions authcore.IssueOptions
 
@@ -37,6 +40,8 @@ type stubManager struct {
 	rotateErr    error
 
 	revokeErr           error
+	revokeRefresh       string
+	revokeCtxErr        error
 	revokeSessionOK     bool
 	revokeSessionErr    error
 	revokeSessionUserID string
@@ -56,6 +61,7 @@ type stubManager struct {
 }
 
 func (s *stubManager) IssueSessionTokens(ctx context.Context, userID string, opts authcore.IssueOptions) (string, time.Time, string, time.Time, error) {
+	s.issueCalls++
 	s.issueLastUserID = userID
 	s.issueLastOptions = opts
 	return s.issueAccess, s.issueAccessExp, s.issueRefresh, s.issueRefreshExp, s.issueErr
@@ -66,6 +72,8 @@ func (s *stubManager) RotateRefreshTokens(ctx context.Context, oldRefresh string
 }
 
 func (s *stubManager) RevokeRefresh(ctx context.Context, refresh string) error {
+	s.revokeRefresh = refresh
+	s.revokeCtxErr = ctx.Err()
 	return s.revokeErr
 }
 
@@ -202,6 +210,86 @@ func TestLogin(t *testing.T) {
 		assertPersistentCookie(t, cookieByName(rec.Result().Cookies(), authsession.DefaultCSRFCookieName))
 		if manager.issueLastOptions.SessionOnly {
 			t.Fatal("expected persistent login to keep session_only disabled")
+		}
+	})
+
+	t.Run("login_events", func(t *testing.T) {
+		now := time.Now().UTC()
+		manager := issuingManager(now)
+		opts := testOptions(stubAuthenticator("admin", "secret", "user-1"))
+		var loginEvent authhttp.LoginEvent
+		opts.Events.Login = func(ctx context.Context, e authhttp.LoginEvent) error {
+			loginEvent = e
+			return nil
+		}
+		r := mustNewTestRouter(t, manager, opts)
+
+		rec := serve(r, http.MethodPost, "/auth/login", `{"username":"admin","password":"secret","persistence":"session"}`, func(req *http.Request) {
+			req.Header.Set("Content-Type", "application/json")
+		})
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+		}
+		if loginEvent.UserID != "user-1" || loginEvent.Username != "admin" || !loginEvent.SessionOnly {
+			t.Fatalf("unexpected login event: %#v", loginEvent)
+		}
+		if !loginEvent.AccessExpiresAt.Equal(manager.issueAccessExp) || !loginEvent.RefreshExpiresAt.Equal(manager.issueRefreshExp) {
+			t.Fatalf("unexpected login event expirations: %#v", loginEvent)
+		}
+	})
+
+	t.Run("login_event_error", func(t *testing.T) {
+		now := time.Now().UTC()
+		manager := issuingManager(now)
+		manager.revokeErr = errors.New("store unavailable")
+		opts := testOptions(stubAuthenticator("admin", "secret", "user-1"))
+		var logs bytes.Buffer
+		opts.Logger = slog.New(slog.NewTextHandler(&logs, nil))
+		opts.Events.Login = func(ctx context.Context, e authhttp.LoginEvent) error {
+			return errors.New("audit unavailable")
+		}
+		r := mustNewTestRouter(t, manager, opts)
+
+		rec := serve(r, http.MethodPost, "/auth/login", `{"username":"admin","password":"secret","persistence":"persistent"}`, func(req *http.Request) {
+			req.Header.Set("Content-Type", "application/json")
+		})
+
+		assertErrorResponse(t, rec, http.StatusInternalServerError, "auth_event_error", "auth event failed")
+		if manager.issueCalls != 1 {
+			t.Fatalf("expected one token issue call, got %d", manager.issueCalls)
+		}
+		if manager.revokeRefresh != "refresh" {
+			t.Fatalf("expected issued refresh token to be revoked, got %q", manager.revokeRefresh)
+		}
+		logText := logs.String()
+		if !strings.Contains(logText, "auth_login_event_failed") || !strings.Contains(logText, "auth_login_event_revoke_failed") {
+			t.Fatalf("expected hook and revoke failures to be logged, got %q", logText)
+		}
+	})
+
+	t.Run("login_event_error_revoke_ignores_request_cancellation", func(t *testing.T) {
+		now := time.Now().UTC()
+		manager := issuingManager(now)
+		opts := testOptions(stubAuthenticator("admin", "secret", "user-1"))
+		opts.Events.Login = func(ctx context.Context, e authhttp.LoginEvent) error {
+			return ctx.Err()
+		}
+		r := mustNewTestRouter(t, manager, opts)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"admin","password":"secret","persistence":"persistent"}`)).WithContext(ctx)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+
+		assertErrorResponse(t, rec, http.StatusInternalServerError, "auth_event_error", "auth event failed")
+		if manager.revokeRefresh != "refresh" {
+			t.Fatalf("expected issued refresh token to be revoked, got %q", manager.revokeRefresh)
+		}
+		if manager.revokeCtxErr != nil {
+			t.Fatalf("expected revoke context to ignore request cancellation, got %v", manager.revokeCtxErr)
 		}
 	})
 

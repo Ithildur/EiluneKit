@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.2.1 - 2026-06-12
+
+### Breaking
+
+- `auth.Tokens` now includes `UserID`. Callers using positional composite literals must add the new field, and code that serializes, reflects on, or otherwise depends on the exported struct shape will observe the additional user ID.
+- `authhttp.Options` now includes `Events` and `Logger` for login lifecycle hooks. Callers using positional composite literals must add the new fields; keyed literals such as `authhttp.Options{LoginAuthenticator: ...}` continue to work.
+
+### Added
+
+- Added an auth HTTP login lifecycle hook for audit and other post-issue checks.
+- Added optional auth HTTP logging for lifecycle hook failures.
+- Added optional strict unknown-field rejection for JSON request body decoding.
+
 ## v0.2.0 - 2026-05-22
 
 ### Breaking

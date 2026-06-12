@@ -11,6 +11,8 @@ import (
 
 const errAuthErrorCode = "auth_error"
 const errAuthErrorMessage = "auth failed"
+const errAuthEventCode = "auth_event_error"
+const errAuthEventMessage = "auth event failed"
 
 func writeAuthFailure(w stdhttp.ResponseWriter, err error) {
 	switch {
@@ -23,6 +25,10 @@ func writeAuthFailure(w stdhttp.ResponseWriter, err error) {
 	default:
 		response.WriteJSONError(w, stdhttp.StatusInternalServerError, errAuthErrorCode, errAuthErrorMessage)
 	}
+}
+
+func writeAuthEventFailure(w stdhttp.ResponseWriter) {
+	response.WriteJSONError(w, stdhttp.StatusInternalServerError, errAuthEventCode, errAuthEventMessage)
 }
 
 func isAuthMisconfigured(err error) bool {

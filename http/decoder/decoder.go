@@ -11,12 +11,33 @@ import (
 var ErrBodyTooLarge = errors.New("body too large")
 var ErrInvalidJSON = errors.New("invalid json")
 
+// JSONOptions configures DecodeJSONBodyWithOptions.
+// Zero value preserves DecodeJSONBody behavior.
+// JSONOptions 配置 DecodeJSONBodyWithOptions。
+// 零值保持 DecodeJSONBody 行为。
+type JSONOptions struct {
+	// DisallowUnknownFields rejects object fields that are not present in the target struct.
+	// DisallowUnknownFields 拒绝目标结构体中不存在的对象字段。
+	DisallowUnknownFields bool
+}
+
 // DecodeJSONBody decodes a JSON request body.
 // Call errors.Is(err, ErrBodyTooLarge) or errors.Is(err, ErrInvalidJSON).
 // DecodeJSONBody 解码 JSON 请求体。
 // 调用 errors.Is(err, ErrBodyTooLarge) 或 errors.Is(err, ErrInvalidJSON) 判断错误。
 func DecodeJSONBody(r *http.Request, out interface{}) error {
+	return DecodeJSONBodyWithOptions(r, out, JSONOptions{})
+}
+
+// DecodeJSONBodyWithOptions decodes a JSON request body with options.
+// Call errors.Is(err, ErrBodyTooLarge) or errors.Is(err, ErrInvalidJSON).
+// DecodeJSONBodyWithOptions 按选项解码 JSON 请求体。
+// 调用 errors.Is(err, ErrBodyTooLarge) 或 errors.Is(err, ErrInvalidJSON) 判断错误。
+func DecodeJSONBodyWithOptions(r *http.Request, out interface{}, opts JSONOptions) error {
 	dec := json.NewDecoder(r.Body)
+	if opts.DisallowUnknownFields {
+		dec.DisallowUnknownFields()
+	}
 	if err := dec.Decode(out); err != nil {
 		return normalizeDecodeError(err)
 	}

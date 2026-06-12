@@ -1,6 +1,7 @@
 package authhttp
 
 import (
+	"log/slog"
 	"net/http"
 	"net/netip"
 	"strings"
@@ -49,6 +50,12 @@ type Options struct {
 	// RateLimit configures login rate limiting.
 	// RateLimit 配置登录限流。
 	RateLimit *RateLimitOptions
+	// Events configures auth lifecycle hooks.
+	// Events 配置认证生命周期 hook。
+	Events Events
+	// Logger records auth lifecycle hook failures when set.
+	// Logger 非空时记录认证生命周期 hook 失败。
+	Logger *slog.Logger
 }
 
 // DefaultOptions returns the default handler options.
@@ -100,6 +107,10 @@ func applyOptions(base, override Options) Options {
 	}
 	if override.RateLimit != nil {
 		base.RateLimit = mergeRateLimitOptions(base.RateLimit, override.RateLimit)
+	}
+	base.Events = override.Events
+	if override.Logger != nil {
+		base.Logger = override.Logger
 	}
 
 	base.BasePath = normalizePath(base.BasePath)

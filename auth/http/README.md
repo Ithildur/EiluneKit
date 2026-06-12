@@ -132,6 +132,8 @@ err := routes.Mount(r, "", routeList)
 - `TrustedProxies`: forwarded-header trust boundary for rate limiting and secure-cookie detection
 - `MaxBodyBytes`: request body size limit for auth endpoints
 - `RateLimit`: login rate-limit settings
+- `Events`: auth lifecycle hooks. `Events.Login` runs after credentials are accepted and tokens are issued, but before cookies and response body are written; returning an error attempts to revoke the new refresh session and fails the login request. Hooks may be called concurrently.
+- `Logger`: optional `*slog.Logger` for auth lifecycle hook failures and revoke-compensation failures.
 
 Forwarded headers are trusted only when `TrustedProxies` is set. The default rate-limit key uses `RemoteAddr`.
 

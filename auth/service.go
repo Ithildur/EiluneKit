@@ -71,6 +71,7 @@ func (s *Service) Login(ctx context.Context, username, password string, opts Iss
 		return Tokens{}, false, err
 	}
 	return Tokens{
+		UserID:           userID,
 		Access:           access,
 		AccessExpiresAt:  accessExp,
 		Refresh:          refresh,

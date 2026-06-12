@@ -47,3 +47,35 @@ func TestDecodeJSONBodyErrorContract(t *testing.T) {
 		})
 	}
 }
+
+func TestDecodeJSONBodyWithOptionsRejectsUnknownFields(t *testing.T) {
+	t.Parallel()
+
+	type payload struct {
+		Name string `json:"name"`
+	}
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"name":"kit","extra":true}`))
+
+	var out payload
+	err := DecodeJSONBodyWithOptions(req, &out, JSONOptions{DisallowUnknownFields: true})
+	if !errors.Is(err, ErrInvalidJSON) {
+		t.Fatalf("DecodeJSONBodyWithOptions error = %v, want %v", err, ErrInvalidJSON)
+	}
+}
+
+func TestDecodeJSONBodyAllowsUnknownFieldsByDefault(t *testing.T) {
+	t.Parallel()
+
+	type payload struct {
+		Name string `json:"name"`
+	}
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"name":"kit","extra":true}`))
+
+	var out payload
+	if err := DecodeJSONBody(req, &out); err != nil {
+		t.Fatalf("DecodeJSONBody error = %v", err)
+	}
+	if out.Name != "kit" {
+		t.Fatalf("expected name kit, got %q", out.Name)
+	}
+}

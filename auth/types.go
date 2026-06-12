@@ -85,6 +85,7 @@ func (f LoginAuthenticatorFunc) Authenticate(ctx context.Context, username, pass
 // Tokens contains access and refresh tokens.
 // Tokens 保存 access 与 refresh token。
 type Tokens struct {
+	UserID           string
 	Access           string
 	AccessExpiresAt  time.Time
 	Refresh          string

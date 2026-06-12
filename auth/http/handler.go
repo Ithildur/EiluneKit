@@ -1,8 +1,10 @@
 package authhttp
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	stdhttp "net/http"
 	"net/netip"
 	"strings"
@@ -31,6 +33,7 @@ type Handler struct {
 
 const errAuthMisconfiguredCode = "auth_misconfigured"
 const errAuthMisconfiguredMessage = "auth is misconfigured"
+const eventRevokeTimeout = 5 * time.Second
 
 // NewHandler returns a Handler.
 // Call NewHandler(manager, opts).
@@ -186,6 +189,22 @@ func (h *Handler) handleLogin(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		response.WriteJSONError(w, stdhttp.StatusUnauthorized, "unauthorized", "invalid credentials")
 		return
 	}
+	if err := h.options.Events.handleLogin(r.Context(), LoginEvent{
+		UserID:           tokens.UserID,
+		Username:         req.Username,
+		SessionOnly:      sessionOnly,
+		AccessExpiresAt:  tokens.AccessExpiresAt,
+		RefreshExpiresAt: tokens.RefreshExpiresAt,
+	}); err != nil {
+		h.logEventError(r.Context(), "auth_login_event_failed", err, slog.String("user_id", tokens.UserID), slog.Bool("session_only", sessionOnly))
+		revokeCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), eventRevokeTimeout)
+		defer cancel()
+		if revokeErr := h.service.Logout(revokeCtx, tokens.Refresh); revokeErr != nil {
+			h.logEventError(r.Context(), "auth_login_event_revoke_failed", revokeErr, slog.String("user_id", tokens.UserID))
+		}
+		writeAuthEventFailure(w)
+		return
+	}
 
 	csrf := uuid.NewString()
 	cfg := h.cookieConfig(r, sessionOnly)
@@ -197,6 +216,14 @@ func (h *Handler) handleLogin(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		ExpiresAt:   tokens.AccessExpiresAt.Format(time.RFC3339),
 		CSRFToken:   csrf,
 	})
+}
+
+func (h *Handler) logEventError(ctx context.Context, msg string, err error, attrs ...slog.Attr) {
+	if h.options.Logger == nil {
+		return
+	}
+	attrs = append(attrs, slog.Any("error", err))
+	h.options.Logger.LogAttrs(ctx, slog.LevelError, msg, attrs...)
 }
 
 func (h *Handler) handleRefresh(w stdhttp.ResponseWriter, r *stdhttp.Request) {
