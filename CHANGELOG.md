@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.2 - 2026-06-16
+
+### Breaking
+
+- Minimum Go version is now Go 1.25.11 to pick up standard-library fixes for GO-2026-5037 and GO-2026-5039.
+
 ## v0.2.1 - 2026-06-12
 
 ### Breaking
