@@ -71,6 +71,150 @@ func TestBlueprintIncludesChildRoutes(t *testing.T) {
 	}
 }
 
+func TestFuncReadsDynamicPath(t *testing.T) {
+	blueprint := routes.NewBlueprint()
+	blueprint.Get(
+		"/remotes/{remoteID}",
+		"Get remote",
+		routes.Func(func(w http.ResponseWriter, r *http.Request, remoteID string) {
+			if got, want := remoteID, "origin"; got != want {
+				t.Fatalf("expected remoteID %q, got %q", want, got)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		}),
+	)
+
+	r := chi.NewRouter()
+	if err := blueprint.Mount(r); err != nil {
+		t.Fatalf("mount: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/remotes/origin", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
+	}
+}
+
+func TestFuncReadsRegexpDynamicPath(t *testing.T) {
+	blueprint := routes.NewBlueprint()
+	blueprint.Get(
+		"/remotes/{remoteID:[a-z]{2}[0-9]{3}}",
+		"Get remote",
+		routes.Func(func(w http.ResponseWriter, r *http.Request, remoteID string) {
+			if got, want := remoteID, "ab123"; got != want {
+				t.Fatalf("expected remoteID %q, got %q", want, got)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		}),
+	)
+
+	r := chi.NewRouter()
+	if err := blueprint.Mount(r); err != nil {
+		t.Fatalf("mount: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/remotes/ab123", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
+	}
+}
+
+func TestFuncReadsPrefixedDynamicPath(t *testing.T) {
+	blueprint := routes.NewBlueprint()
+	blueprint.Get(
+		"/remotes/{remoteID}",
+		"Get remote",
+		routes.Func(func(w http.ResponseWriter, r *http.Request, tenantID, remoteID string) {
+			if got, want := tenantID, "acme"; got != want {
+				t.Fatalf("expected tenantID %q, got %q", want, got)
+			}
+			if got, want := remoteID, "origin"; got != want {
+				t.Fatalf("expected remoteID %q, got %q", want, got)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		}),
+	)
+
+	r := chi.NewRouter()
+	if err := blueprint.MountAt(r, "/tenants/{tenantID}"); err != nil {
+		t.Fatalf("mount: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/tenants/acme/remotes/origin", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
+	}
+}
+
+func TestFuncReadsTenDynamicPathParams(t *testing.T) {
+	blueprint := routes.NewBlueprint()
+	blueprint.Get(
+		"/{a}/{b}/{c}/{d}/{e}/{f}/{g}/{h}/{i}/{j}",
+		"Get nested resource",
+		routes.Func(func(
+			w http.ResponseWriter,
+			r *http.Request,
+			a, b, c, d, e, f, g, h, i, j string,
+		) {
+			got := []string{a, b, c, d, e, f, g, h, i, j}
+			want := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("expected path params %#v, got %#v", want, got)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		}),
+	)
+
+	r := chi.NewRouter()
+	if err := blueprint.Mount(r); err != nil {
+		t.Fatalf("mount: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/a/b/c/d/e/f/g/h/i/j", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
+	}
+}
+
+func TestFuncRejectsMismatchedDynamicPath(t *testing.T) {
+	blueprint := routes.NewBlueprint()
+	blueprint.Get(
+		"/remotes/{remoteID}",
+		"Get remote",
+		routes.Func(func(w http.ResponseWriter, r *http.Request, tenantID, remoteID string) {}),
+	)
+
+	err := blueprint.Mount(chi.NewRouter())
+	if err == nil {
+		t.Fatal("expected path params mismatch error")
+	}
+}
+
+func TestFuncRejectsDuplicateDynamicPathNames(t *testing.T) {
+	blueprint := routes.NewBlueprint()
+	blueprint.Get(
+		"/remotes/{id}",
+		"Get remote",
+		routes.Func(func(w http.ResponseWriter, r *http.Request, tenantID, remoteID string) {}),
+	)
+
+	err := blueprint.MountAt(chi.NewRouter(), "/tenants/{id}")
+	if err == nil {
+		t.Fatal("expected duplicate path param error")
+	}
+	if !strings.Contains(err.Error(), `duplicate path param "id"`) {
+		t.Fatalf("expected duplicate path param error, got %v", err)
+	}
+}
+
 func TestExportOpenAPI(t *testing.T) {
 	payload, err := routes.ExportOpenAPI([]routes.Route{
 		{
@@ -456,8 +600,15 @@ func TestHandlerRejectsNilHandlers(t *testing.T) {
 	mustPanic(t, func() {
 		routes.Handler(nil)
 	})
+
+	var fn func(http.ResponseWriter, *http.Request)
 	mustPanic(t, func() {
-		routes.Func(nil)
+		routes.Func(fn)
+	})
+
+	var paramFn func(http.ResponseWriter, *http.Request, string)
+	mustPanic(t, func() {
+		routes.Func(paramFn)
 	})
 
 	var h *typedNilHandler

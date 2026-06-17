@@ -77,7 +77,7 @@ func Mount(r chi.Router, prefix string, routes []Route) error {
 
 	var mountErr error
 	r.Route(p, func(r chi.Router) {
-		if err := mountRoutes(r, routes); err != nil && mountErr == nil {
+		if err := mountRoutesAt(r, p, routes); err != nil && mountErr == nil {
 			mountErr = err
 		}
 	})
@@ -85,6 +85,10 @@ func Mount(r chi.Router, prefix string, routes []Route) error {
 }
 
 func mountRoutes(r chi.Router, routes []Route) error {
+	return mountRoutesAt(r, "", routes)
+}
+
+func mountRoutesAt(r chi.Router, prefix string, routes []Route) error {
 	seen := make(map[string]struct{}, len(routes))
 
 	for i, raw := range routes {
@@ -102,7 +106,11 @@ func mountRoutes(r chi.Router, routes []Route) error {
 		}
 		seen[key] = struct{}{}
 
-		handler := raw.Handler
+		fullPath := joinPath(prefix, path)
+		handler, err := bindPathHandler(raw.Handler, fullPath)
+		if err != nil {
+			return fmt.Errorf("routes: route[%d] %s %s: %w", i, method, fullPath, err)
+		}
 		if effectiveAuth(raw.Auth) == AuthRequired {
 			handler = requireAuthenticated(handler)
 		}

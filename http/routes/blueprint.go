@@ -1,8 +1,10 @@
 package routes
 
 import (
+	"fmt"
 	"net/http"
 	"reflect"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -94,23 +96,41 @@ func Use(mw ...Middleware) RouteOption {
 }
 
 // Handler builds the required Blueprint handler from an existing http.Handler.
-// Prefer Func for plain http.HandlerFunc values and methods.
+// Prefer Func for handler functions and methods.
 // Panics if h is nil, including typed-nil handlers.
 // Handler 使用现成的 http.Handler 构造 Blueprint 必填 handler。
-// 普通 http.HandlerFunc 或方法值优先用 Func。
+// handler 函数或方法值优先用 Func。
 // h 为 nil 时会 panic，包括 typed-nil handler。
 func Handler(h http.Handler) handlerSpec {
 	return handlerSpec{handler: mustHandler(h)}
 }
 
-// Func builds the required Blueprint handler from an http.HandlerFunc.
-// This is the preferred option for plain handler functions and methods.
+// Func builds the required Blueprint handler from a function.
+// Dynamic path values are passed to extra string arguments in route path order.
+// Mount and include prefixes are part of that order.
+// Func supports up to 10 dynamic path values.
 // Panics if fn is nil.
-// Func 使用 http.HandlerFunc 构造 Blueprint 必填 handler。
-// 这是普通 handler 函数和方法值的首选写法。
+// Func 使用函数构造 Blueprint 必填 handler。
+// 动态 path 值会按路由 path 顺序传给额外的 string 参数。
+// Mount 和 include 前缀也属于该顺序。
+// Func 最多支持 10 个动态 path 值。
 // fn 为 nil 时会 panic。
-func Func(fn http.HandlerFunc) handlerSpec {
-	return handlerSpec{handler: mustHandler(fn)}
+func Func[H handlerFunc](fn H) handlerSpec {
+	return handlerSpec{handler: newFuncHandler(fn)}
+}
+
+type handlerFunc interface {
+	~func(http.ResponseWriter, *http.Request) |
+		~func(http.ResponseWriter, *http.Request, string) |
+		~func(http.ResponseWriter, *http.Request, string, string) |
+		~func(http.ResponseWriter, *http.Request, string, string, string) |
+		~func(http.ResponseWriter, *http.Request, string, string, string, string) |
+		~func(http.ResponseWriter, *http.Request, string, string, string, string, string) |
+		~func(http.ResponseWriter, *http.Request, string, string, string, string, string, string) |
+		~func(http.ResponseWriter, *http.Request, string, string, string, string, string, string, string) |
+		~func(http.ResponseWriter, *http.Request, string, string, string, string, string, string, string, string) |
+		~func(http.ResponseWriter, *http.Request, string, string, string, string, string, string, string, string, string) |
+		~func(http.ResponseWriter, *http.Request, string, string, string, string, string, string, string, string, string, string)
 }
 
 func mustHandler(h http.Handler) http.Handler {
@@ -131,6 +151,134 @@ func isNilHandler(h http.Handler) bool {
 	default:
 		return false
 	}
+}
+
+type paramHandler struct {
+	fn    reflect.Value
+	names []string
+}
+
+func newFuncHandler[H handlerFunc](fn H) http.Handler {
+	if h, ok := any(fn).(http.HandlerFunc); ok {
+		return mustHandler(h)
+	}
+	if h, ok := any(fn).(func(http.ResponseWriter, *http.Request)); ok {
+		return mustHandler(http.HandlerFunc(h))
+	}
+	v := reflect.ValueOf(fn)
+	if v.IsNil() {
+		panic("routes: nil handler function")
+	}
+	if v.Type().NumIn() == 2 {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			v.Call([]reflect.Value{reflect.ValueOf(w), reflect.ValueOf(r)})
+		})
+	}
+	return &paramHandler{fn: v}
+}
+
+func (h *paramHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if h == nil {
+		panic("routes: nil path params handler")
+	}
+	if len(h.names) < h.paramCount() {
+		http.Error(w, "route path params are not bound", http.StatusInternalServerError)
+		return
+	}
+
+	args := make([]reflect.Value, 0, h.fn.Type().NumIn())
+	args = append(args, reflect.ValueOf(w), reflect.ValueOf(r))
+	for _, name := range h.names[:h.paramCount()] {
+		args = append(args, reflect.ValueOf(pathParam(r, name)))
+	}
+	h.fn.Call(args)
+}
+
+func (h *paramHandler) bindPath(path string) (http.Handler, error) {
+	names := pathParamNames(path)
+	if len(names) != h.paramCount() {
+		return nil, fmt.Errorf("handler expects %d path params, route has %d", h.paramCount(), len(names))
+	}
+	if dup := duplicatePathParam(names); dup != "" {
+		return nil, fmt.Errorf("duplicate path param %q", dup)
+	}
+	out := *h
+	out.names = append([]string(nil), names...)
+	return &out, nil
+}
+
+func (h *paramHandler) paramCount() int {
+	return h.fn.Type().NumIn() - 2
+}
+
+func bindPathHandler(h http.Handler, path string) (http.Handler, error) {
+	bound, ok := h.(interface {
+		bindPath(string) (http.Handler, error)
+	})
+	if !ok {
+		return h, nil
+	}
+	return bound.bindPath(path)
+}
+
+func pathParam(r *http.Request, name string) string {
+	if value := r.PathValue(name); value != "" {
+		return value
+	}
+	return chi.URLParam(r, name)
+}
+
+func pathParamNames(path string) []string {
+	names := make([]string, 0)
+	for i := 0; i < len(path); i++ {
+		switch path[i] {
+		case '{':
+			end := pathParamEnd(path, i)
+			if end < 0 {
+				return names
+			}
+			name := path[i+1 : end]
+			if colon := strings.IndexByte(name, ':'); colon >= 0 {
+				name = name[:colon]
+			}
+			if name != "" {
+				names = append(names, name)
+			}
+			i = end
+		case '*':
+			if (i == 0 || path[i-1] == '/') && (i+1 == len(path) || path[i+1] == '/') {
+				names = append(names, "*")
+			}
+		}
+	}
+	return names
+}
+
+func pathParamEnd(path string, start int) int {
+	depth := 0
+	for i := start; i < len(path); i++ {
+		switch path[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func duplicatePathParam(names []string) string {
+	seen := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		if _, ok := seen[name]; ok {
+			return name
+		}
+		seen[name] = struct{}{}
+	}
+	return ""
 }
 
 // IncludeOption modifies child routes during Include.

@@ -8,7 +8,7 @@ Use `routes.Blueprint` in normal application code. It keeps handlers, metadata, 
 
 Use lower-level `routes.Route` and `routes.Mount` when routes are generated, adapted from another router, or when you need direct control over the route slice. `Blueprint` builds the same route data; it is not a second routing system.
 
-`Blueprint` uses a handler-required registration shape: methods take `path`, `summary`, a required handler built with `routes.Func` or `routes.Handler`, then route options. Prefer `routes.Func(fn)` for plain `http.HandlerFunc` values and methods; use `routes.Handler(h)` only when middleware or an adapter already returned an `http.Handler`.
+`Blueprint` uses a handler-required registration shape: methods take `path`, `summary`, a required handler built with `routes.Func` or `routes.Handler`, then route options. Prefer `routes.Func(fn)` for handler functions and methods; use `routes.Handler(h)` only when middleware or an adapter already returned an `http.Handler`.
 
 ## Blueprint
 
@@ -28,11 +28,26 @@ updater.Post(
 	"Refresh updater state",
 	routes.Func(refresh),
 )
+updater.Get(
+	"/remotes/{remoteID}",
+	"Get remote",
+	routes.Func(remote),
+)
 
 api := routes.NewBlueprint()
 api.Include("/updater", updater)
 
 err = api.MountAt(r, "/api")
+```
+
+Handlers can accept dynamic path values after `*http.Request`.
+`routes.Func` supports up to 10 dynamic path values.
+Dynamic path names must be unique in the final mounted route.
+
+```go
+func remote(w http.ResponseWriter, r *http.Request, remoteID string) {
+	_ = remoteID
+}
 ```
 
 `Blueprint.Routes()` returns owned `[]routes.Route` copies, so callers can still export or mount through the lower-level functions.

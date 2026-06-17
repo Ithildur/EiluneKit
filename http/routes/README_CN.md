@@ -8,7 +8,7 @@
 
 当路由来自代码生成、需要从其他 router 适配，或需要直接控制 `[]routes.Route` 时，使用更底层的 `routes.Route` 和 `routes.Mount`。`Blueprint` 构建的是同一套路由数据，不是另一套路由系统。
 
-`Blueprint` 使用 handler-required（必填 handler）的注册形状：方法接收 `path`、`summary`、通过 `routes.Func` 或 `routes.Handler` 构造的必填 handler，然后才是路由选项。普通 `http.HandlerFunc` 和方法值优先用 `routes.Func(fn)`；只有中间件或适配器已经返回 `http.Handler` 时才用 `routes.Handler(h)`。
+`Blueprint` 使用 handler-required（必填 handler）的注册形状：方法接收 `path`、`summary`、通过 `routes.Func` 或 `routes.Handler` 构造的必填 handler，然后才是路由选项。handler 函数和方法值优先用 `routes.Func(fn)`；只有中间件或适配器已经返回 `http.Handler` 时才用 `routes.Handler(h)`。
 
 ## Blueprint
 
@@ -28,11 +28,26 @@ updater.Post(
 	"Refresh updater state",
 	routes.Func(refresh),
 )
+updater.Get(
+	"/remotes/{remoteID}",
+	"Get remote",
+	routes.Func(remote),
+)
 
 api := routes.NewBlueprint()
 api.Include("/updater", updater)
 
 err = api.MountAt(r, "/api")
+```
+
+handler 可以在 `*http.Request` 后接收动态 path 值。
+`routes.Func` 最多支持 10 个动态 path 值。
+最终挂载路由里的动态 path 名必须唯一。
+
+```go
+func remote(w http.ResponseWriter, r *http.Request, remoteID string) {
+	_ = remoteID
+}
 ```
 
 `Blueprint.Routes()` 返回拥有所有权的 `[]routes.Route` 副本，所以调用方仍然可以通过底层函数导出或挂载。

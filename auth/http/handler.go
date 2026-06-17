@@ -326,12 +326,12 @@ func (h *Handler) handleDeleteAllSessions(w stdhttp.ResponseWriter, r *stdhttp.R
 	w.WriteHeader(stdhttp.StatusNoContent)
 }
 
-func (h *Handler) handleDeleteSession(w stdhttp.ResponseWriter, r *stdhttp.Request) {
+func (h *Handler) handleDeleteSession(w stdhttp.ResponseWriter, r *stdhttp.Request, sessionID string) {
 	claims, ok := h.authenticatedClaims(w, r)
 	if !ok {
 		return
 	}
-	sessionID := strings.TrimSpace(chi.URLParam(r, "sid"))
+	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
 		response.WriteJSONError(w, stdhttp.StatusBadRequest, "invalid_session", "session id is required")
 		return

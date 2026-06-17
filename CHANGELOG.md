@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.3 - 2026-06-17
+
+### Breaking
+
+- `routes.Func` now uses a typed handler signature set for functions with optional path parameters. Existing direct calls with `http.HandlerFunc` values continue to work, but callers that pass untyped `nil` or use `routes.Func` itself as a function value must update.
+
+### Added
+
+- Added `routes.Func` support for passing dynamic path values as trailing `string` handler arguments, including mounted and included route prefixes.
+
 ## v0.2.2 - 2026-06-16
 
 ### Breaking
