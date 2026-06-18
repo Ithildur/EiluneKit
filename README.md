@@ -14,7 +14,7 @@ Requires Go 1.25.11 or newer.
 
 ## Design
 
-- `auth` owns transport-neutral login, refresh, logout, and session revocation. `auth/http` adapts it to `chi`, cookies, and JSON.
+- `auth` owns shared principal helpers and transport-neutral auth flows. `auth/http/basic` is the cookie-based single-user adapter; `auth/rbac` and `auth/http/rbac` handle multi-user JSON bearer auth.
 - `http/routes` keeps route metadata next to handlers. `Route` is the data model; `Blueprint` is the recommended builder.
 - `http/static` mounts static files and SPA handlers from project-relative paths such as `dist` or `web/dist`.
 
@@ -30,12 +30,12 @@ if err != nil {
 	return err
 }
 
-login, err := authhttp.NewStaticPassword("dashboard-admin", adminPassword)
+login, err := authbasic.NewStaticPassword("dashboard-admin", adminPassword)
 if err != nil {
 	return err
 }
 
-authHandler, err := authhttp.NewHandler(manager, authhttp.Options{
+authHandler, err := authbasic.NewHandler(manager, authbasic.Options{
 	LoginAuthenticator: login,
 })
 if err != nil {
@@ -54,14 +54,17 @@ This uses in-process session storage for one process; sessions are not shared ac
 Start with the package docs:
 
 - `http/routes/README.md`: route declarations, `Blueprint`, and lower-level `Route`/`Mount`
-- `auth/http/README.md`: auth endpoints and bearer middleware for `chi`
+- `auth/http/basic/README.md`: single-user cookie auth endpoints and bearer middleware for `chi`
+- `auth/http/rbac/README.md`: multi-user JSON bearer auth endpoints and role/scope middleware
 - `postgres/README.md`: GORM and pgx connection helpers
 - `redis/README.md`: Redis client setup and TLS option
 
 ## Package Layout
 
-- `auth`: transport-neutral auth service, credential interfaces, and static password helpers
-- `auth/http`: auth handlers, bearer middleware, login rate limiting, and session revocation endpoints
+- `auth`: shared principal helpers, transport-neutral auth service, credential interfaces, and static password helpers
+- `auth/rbac`: multi-user auth service, principal loading, role policy, lockout, API token, and audit hook contracts
+- `auth/http/basic`: cookie-based single-user auth handlers, bearer middleware, login rate limiting, and session revocation endpoints
+- `auth/http/rbac`: JSON bearer auth handlers and RBAC middleware
 - `auth/jwt`: access and refresh JWT issuance backed by `auth/store`
 - `auth/session`: cookie and CSRF helpers
 - `auth/store`: session and token state interfaces and memory store
@@ -84,6 +87,12 @@ Start with the package docs:
 
 - `auth/http/README.md`
 - `auth/http/README_CN.md`
+- `auth/rbac/README.md`
+- `auth/rbac/README_CN.md`
+- `auth/http/basic/README.md`
+- `auth/http/basic/README_CN.md`
+- `auth/http/rbac/README.md`
+- `auth/http/rbac/README_CN.md`
 - `http/routes/README.md`
 - `http/routes/README_CN.md`
 - `postgres/README.md`

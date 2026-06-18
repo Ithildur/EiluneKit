@@ -14,7 +14,7 @@ go get github.com/Ithildur/EiluneKit@latest
 
 ## 设计
 
-- `auth` 负责与传输层无关的登录、刷新、登出和 session 吊销。`auth/http` 将它适配为 `chi`、cookie 和 JSON。
+- `auth` 提供通用 principal 辅助和与传输层无关的认证流程。`auth/http/basic` 是基于 cookie 的单用户适配层；`auth/rbac` 和 `auth/http/rbac` 处理多用户 JSON bearer 认证。
 - `http/routes` 让路由元数据贴着 handler。`Route` 是数据模型；推荐用 `Blueprint` 构建。
 - `http/static` 从项目内相对路径（例如 `dist`、`web/dist`）挂载静态文件和 SPA。
 
@@ -30,12 +30,12 @@ if err != nil {
 	return err
 }
 
-login, err := authhttp.NewStaticPassword("dashboard-admin", adminPassword)
+login, err := authbasic.NewStaticPassword("dashboard-admin", adminPassword)
 if err != nil {
 	return err
 }
 
-authHandler, err := authhttp.NewHandler(manager, authhttp.Options{
+authHandler, err := authbasic.NewHandler(manager, authbasic.Options{
 	LoginAuthenticator: login,
 })
 if err != nil {
@@ -54,14 +54,17 @@ if err := authHandler.Register(r); err != nil {
 从包文档开始：
 
 - `http/routes/README_CN.md`：路由声明、`Blueprint` 和更底层的 `Route`/`Mount`
-- `auth/http/README_CN.md`：面向 `chi` 的认证端点和 Bearer 中间件
+- `auth/http/basic/README_CN.md`：面向 `chi` 的单用户 cookie 认证端点和 Bearer 中间件
+- `auth/http/rbac/README_CN.md`：多用户 JSON bearer 认证端点和角色 / scope 中间件
 - `postgres/README_CN.md`：GORM 与 pgx 连接辅助
 - `redis/README_CN.md`：Redis client 构造与 TLS 选项
 
 ## 包布局
 
-- `auth`：与传输层无关的认证 service、凭据接口和固定密码辅助
-- `auth/http`：认证 handler、Bearer 中间件、登录限流和会话吊销端点
+- `auth`：通用 principal 辅助、与传输层无关的认证 service、凭据接口和固定密码辅助
+- `auth/rbac`：多用户认证 service、principal 加载、角色策略、登录锁定、API token 和审计 hook 契约
+- `auth/http/basic`：基于 cookie 的单用户认证 handler、Bearer 中间件、登录限流和会话吊销端点
+- `auth/http/rbac`：JSON bearer 认证 handler 和 RBAC 中间件
 - `auth/jwt`：由 `auth/store` 支撑的 access / refresh JWT 签发与校验
 - `auth/session`：cookie 与 CSRF 辅助
 - `auth/store`：session / token 状态接口与 memory store
@@ -84,6 +87,12 @@ if err := authHandler.Register(r); err != nil {
 
 - `auth/http/README.md`
 - `auth/http/README_CN.md`
+- `auth/rbac/README.md`
+- `auth/rbac/README_CN.md`
+- `auth/http/basic/README.md`
+- `auth/http/basic/README_CN.md`
+- `auth/http/rbac/README.md`
+- `auth/http/rbac/README_CN.md`
 - `http/routes/README.md`
 - `http/routes/README_CN.md`
 - `postgres/README.md`

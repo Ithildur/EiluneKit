@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.2.4 - 2026-06-18
+
+### Breaking
+
+- Moved the existing cookie-based auth HTTP adapter from `auth/http` to `auth/http/basic`.
+
+### Added
+
+- Added shared `auth.Principal` context helpers for authenticated users and API tokens.
+- Added `auth/rbac` for multi-user auth with user status validation, role policy hooks, default in-memory login lockout, audit hooks, and opaque API token contracts.
+- Added `auth/http/rbac` JSON bearer routes for login, refresh, logout, current principal, role middleware, and scope middleware.
+
+### Fixed
+
+- Mapped JWT unauthorized errors from auth HTTP middleware to `401 Unauthorized` instead of a generic auth failure.
+
 ## v0.2.3 - 2026-06-17
 
 ### Breaking
