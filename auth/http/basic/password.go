@@ -1,4 +1,4 @@
-package authhttp
+package basic
 
 import "github.com/Ithildur/EiluneKit/auth"
 

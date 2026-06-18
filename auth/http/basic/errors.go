@@ -1,4 +1,4 @@
-package authhttp
+package basic
 
 import (
 	"errors"
@@ -20,6 +20,8 @@ func writeAuthFailure(w stdhttp.ResponseWriter, err error) {
 		response.WriteJSONError(w, stdhttp.StatusInternalServerError, errAuthErrorCode, errAuthErrorMessage)
 	case errors.Is(err, authjwt.ErrStoreUnavailable):
 		response.WriteJSONError(w, stdhttp.StatusServiceUnavailable, "auth_unavailable", "auth is unavailable")
+	case errors.Is(err, authjwt.ErrUnauthorized):
+		response.WriteJSONError(w, stdhttp.StatusUnauthorized, "unauthorized", "token invalid or expired")
 	case isAuthMisconfigured(err):
 		writeAuthMisconfigured(w)
 	default:

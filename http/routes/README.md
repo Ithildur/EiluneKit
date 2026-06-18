@@ -13,7 +13,7 @@ Use lower-level `routes.Route` and `routes.Mount` when routes are generated, ada
 ## Blueprint
 
 ```go
-bearer, err := authhttp.RequireBearer(manager)
+bearer, err := authbasic.RequireBearer(manager)
 if err != nil {
 	return err
 }

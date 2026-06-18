@@ -1,4 +1,4 @@
-package authhttp_test
+package basic_test
 
 import (
 	"bytes"
@@ -15,7 +15,7 @@ import (
 	"time"
 
 	authcore "github.com/Ithildur/EiluneKit/auth"
-	"github.com/Ithildur/EiluneKit/auth/http"
+	authbasic "github.com/Ithildur/EiluneKit/auth/http/basic"
 	authjwt "github.com/Ithildur/EiluneKit/auth/jwt"
 	authsession "github.com/Ithildur/EiluneKit/auth/session"
 	"github.com/Ithildur/EiluneKit/http/response"
@@ -102,7 +102,7 @@ func (s *stubManager) ValidateAccessToken(ctx context.Context, token string) (au
 	return authjwt.Claims{}, false, s.validateAccessErr
 }
 
-func newRouter(t *testing.T, handler *authhttp.Handler) *chi.Mux {
+func newRouter(t *testing.T, handler *authbasic.Handler) *chi.Mux {
 	t.Helper()
 	r := chi.NewRouter()
 	if err := handler.Register(r); err != nil {
@@ -111,39 +111,39 @@ func newRouter(t *testing.T, handler *authhttp.Handler) *chi.Mux {
 	return r
 }
 
-func mustNewHandler(t *testing.T, auth authhttp.TokenManager, opts authhttp.Options) *authhttp.Handler {
+func mustNewHandler(t *testing.T, auth authbasic.TokenManager, opts authbasic.Options) *authbasic.Handler {
 	t.Helper()
-	handler, err := authhttp.NewHandler(auth, opts)
+	handler, err := authbasic.NewHandler(auth, opts)
 	if err != nil {
 		t.Fatalf("new handler: %v", err)
 	}
 	return handler
 }
 
-func mustNewTestRouter(t *testing.T, auth authhttp.TokenManager, opts authhttp.Options) *chi.Mux {
+func mustNewTestRouter(t *testing.T, auth authbasic.TokenManager, opts authbasic.Options) *chi.Mux {
 	t.Helper()
 	return newRouter(t, mustNewHandler(t, auth, opts))
 }
 
-func mustNewStaticPassword(t *testing.T, userID, password string) authhttp.LoginAuthenticator {
+func mustNewStaticPassword(t *testing.T, userID, password string) authbasic.LoginAuthenticator {
 	t.Helper()
-	authenticator, err := authhttp.NewStaticPassword(userID, password)
+	authenticator, err := authbasic.NewStaticPassword(userID, password)
 	if err != nil {
 		t.Fatalf("new static password: %v", err)
 	}
 	return authenticator
 }
 
-func stubAuthenticator(expectedUsername, expectedPassword, userID string) authhttp.LoginAuthenticator {
-	return authhttp.LoginAuthenticatorFunc(func(ctx context.Context, username, password string) (string, bool, error) {
+func stubAuthenticator(expectedUsername, expectedPassword, userID string) authbasic.LoginAuthenticator {
+	return authbasic.LoginAuthenticatorFunc(func(ctx context.Context, username, password string) (string, bool, error) {
 		return userID, username == expectedUsername && password == expectedPassword, nil
 	})
 }
 
-func testOptions(authenticator authhttp.LoginAuthenticator) authhttp.Options {
-	return authhttp.Options{
+func testOptions(authenticator authbasic.LoginAuthenticator) authbasic.Options {
+	return authbasic.Options{
 		LoginAuthenticator: authenticator,
-		RateLimit:          &authhttp.RateLimitOptions{Disabled: true},
+		RateLimit:          &authbasic.RateLimitOptions{Disabled: true},
 	}
 }
 
@@ -217,8 +217,8 @@ func TestLogin(t *testing.T) {
 		now := time.Now().UTC()
 		manager := issuingManager(now)
 		opts := testOptions(stubAuthenticator("admin", "secret", "user-1"))
-		var loginEvent authhttp.LoginEvent
-		opts.Events.Login = func(ctx context.Context, e authhttp.LoginEvent) error {
+		var loginEvent authbasic.LoginEvent
+		opts.Events.Login = func(ctx context.Context, e authbasic.LoginEvent) error {
 			loginEvent = e
 			return nil
 		}
@@ -246,7 +246,7 @@ func TestLogin(t *testing.T) {
 		opts := testOptions(stubAuthenticator("admin", "secret", "user-1"))
 		var logs bytes.Buffer
 		opts.Logger = slog.New(slog.NewTextHandler(&logs, nil))
-		opts.Events.Login = func(ctx context.Context, e authhttp.LoginEvent) error {
+		opts.Events.Login = func(ctx context.Context, e authbasic.LoginEvent) error {
 			return errors.New("audit unavailable")
 		}
 		r := mustNewTestRouter(t, manager, opts)
@@ -272,7 +272,7 @@ func TestLogin(t *testing.T) {
 		now := time.Now().UTC()
 		manager := issuingManager(now)
 		opts := testOptions(stubAuthenticator("admin", "secret", "user-1"))
-		opts.Events.Login = func(ctx context.Context, e authhttp.LoginEvent) error {
+		opts.Events.Login = func(ctx context.Context, e authbasic.LoginEvent) error {
 			return ctx.Err()
 		}
 		r := mustNewTestRouter(t, manager, opts)
@@ -335,7 +335,7 @@ func TestLogin(t *testing.T) {
 	t.Run("error_responses", func(t *testing.T) {
 		tests := []struct {
 			name       string
-			build      func(t *testing.T) *authhttp.Handler
+			build      func(t *testing.T) *authbasic.Handler
 			body       string
 			wantStatus int
 			wantCode   string
@@ -343,7 +343,7 @@ func TestLogin(t *testing.T) {
 		}{
 			{
 				name: "invalid_json",
-				build: func(t *testing.T) *authhttp.Handler {
+				build: func(t *testing.T) *authbasic.Handler {
 					return mustNewHandler(t, &stubManager{}, testOptions(stubAuthenticator("admin", "secret", "user-1")))
 				},
 				body:       `{"username":"admin"`,
@@ -353,7 +353,7 @@ func TestLogin(t *testing.T) {
 			},
 			{
 				name: "body_too_large",
-				build: func(t *testing.T) *authhttp.Handler {
+				build: func(t *testing.T) *authbasic.Handler {
 					opts := testOptions(stubAuthenticator("admin", "secret", "user-1"))
 					opts.MaxBodyBytes = 8
 					return mustNewHandler(t, &stubManager{}, opts)
@@ -365,8 +365,8 @@ func TestLogin(t *testing.T) {
 			},
 			{
 				name: "authenticator_error",
-				build: func(t *testing.T) *authhttp.Handler {
-					return mustNewHandler(t, &stubManager{}, testOptions(authhttp.LoginAuthenticatorFunc(func(ctx context.Context, username, password string) (string, bool, error) {
+				build: func(t *testing.T) *authbasic.Handler {
+					return mustNewHandler(t, &stubManager{}, testOptions(authbasic.LoginAuthenticatorFunc(func(ctx context.Context, username, password string) (string, bool, error) {
 						return "", false, errors.New("backend unavailable")
 					})))
 				},
@@ -377,8 +377,8 @@ func TestLogin(t *testing.T) {
 			},
 			{
 				name: "authenticator_contract_violation",
-				build: func(t *testing.T) *authhttp.Handler {
-					return mustNewHandler(t, &stubManager{}, testOptions(authhttp.LoginAuthenticatorFunc(func(ctx context.Context, username, password string) (string, bool, error) {
+				build: func(t *testing.T) *authbasic.Handler {
+					return mustNewHandler(t, &stubManager{}, testOptions(authbasic.LoginAuthenticatorFunc(func(ctx context.Context, username, password string) (string, bool, error) {
 						return "", true, nil
 					})))
 				},
@@ -389,7 +389,7 @@ func TestLogin(t *testing.T) {
 			},
 			{
 				name: "missing_persistence",
-				build: func(t *testing.T) *authhttp.Handler {
+				build: func(t *testing.T) *authbasic.Handler {
 					return mustNewHandler(t, &stubManager{}, testOptions(stubAuthenticator("admin", "secret", "user-1")))
 				},
 				body:       `{"username":"admin","password":"secret"}`,
@@ -399,7 +399,7 @@ func TestLogin(t *testing.T) {
 			},
 			{
 				name: "invalid_persistence",
-				build: func(t *testing.T) *authhttp.Handler {
+				build: func(t *testing.T) *authbasic.Handler {
 					return mustNewHandler(t, &stubManager{}, testOptions(stubAuthenticator("admin", "secret", "user-1")))
 				},
 				body:       `{"username":"admin","password":"secret","persistence":"weekly"}`,
@@ -422,13 +422,13 @@ func TestLogin(t *testing.T) {
 }
 
 func TestRegisterRejectsNilHandler(t *testing.T) {
-	var handler *authhttp.Handler
+	var handler *authbasic.Handler
 
 	err := handler.Register(chi.NewRouter())
 	if err == nil {
 		t.Fatal("expected nil handler to fail")
 	}
-	if got, want := err.Error(), "authhttp: handler is nil"; got != want {
+	if got, want := err.Error(), "authbasic: handler is nil"; got != want {
 		t.Fatalf("expected error %q, got %q", want, got)
 	}
 }
@@ -468,24 +468,24 @@ func TestRoutesExportAuthRequirement(t *testing.T) {
 func TestRefreshCookiePath(t *testing.T) {
 	tests := []struct {
 		name            string
-		options         authhttp.Options
+		options         authbasic.Options
 		wantRefreshPath string
 	}{
 		{
 			name: "defaults_to_base_path",
-			options: authhttp.Options{
+			options: authbasic.Options{
 				LoginAuthenticator: stubAuthenticator("admin", "secret", "user-1"),
-				RateLimit:          &authhttp.RateLimitOptions{Disabled: true},
+				RateLimit:          &authbasic.RateLimitOptions{Disabled: true},
 			},
 			wantRefreshPath: "/auth",
 		},
 		{
 			name: "uses_explicit_public_path",
-			options: authhttp.Options{
+			options: authbasic.Options{
 				BasePath:           "/auth",
 				RefreshCookiePath:  "/api/auth",
 				LoginAuthenticator: stubAuthenticator("admin", "secret", "user-1"),
-				RateLimit:          &authhttp.RateLimitOptions{Disabled: true},
+				RateLimit:          &authbasic.RateLimitOptions{Disabled: true},
 			},
 			wantRefreshPath: "/api/auth",
 		},
@@ -838,12 +838,12 @@ func TestSessionEndpoints(t *testing.T) {
 func TestLoginRateLimit(t *testing.T) {
 	tests := []struct {
 		name    string
-		options authhttp.Options
+		options authbasic.Options
 		run     func(t *testing.T, r http.Handler)
 	}{
 		{
 			name: "ignores_spoofed_forwarded_headers_by_default",
-			options: authhttp.Options{
+			options: authbasic.Options{
 				LoginAuthenticator: stubAuthenticator("admin", "secret", "user-1"),
 			},
 			run: func(t *testing.T, r http.Handler) {
@@ -863,9 +863,9 @@ func TestLoginRateLimit(t *testing.T) {
 		},
 		{
 			name: "trusted_proxy_uses_forwarded_headers",
-			options: authhttp.Options{
+			options: authbasic.Options{
 				LoginAuthenticator: stubAuthenticator("admin", "secret", "user-1"),
-				RateLimit: &authhttp.RateLimitOptions{
+				RateLimit: &authbasic.RateLimitOptions{
 					Requests:       1,
 					Window:         time.Minute,
 					IPv4PrefixBits: 32,

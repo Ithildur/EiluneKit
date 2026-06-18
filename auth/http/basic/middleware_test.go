@@ -1,4 +1,4 @@
-package authhttp_test
+package basic_test
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Ithildur/EiluneKit/auth/http"
+	authbasic "github.com/Ithildur/EiluneKit/auth/http/basic"
 	authjwt "github.com/Ithildur/EiluneKit/auth/jwt"
 	"github.com/Ithildur/EiluneKit/http/response"
 )
@@ -34,7 +34,7 @@ func TestRequireBearerAcceptsMinimalValidatorInterface(t *testing.T) {
 			SessionID: "session-1",
 		},
 	}
-	middleware, err := authhttp.RequireBearer(auth)
+	middleware, err := authbasic.RequireBearer(auth)
 	if err != nil {
 		t.Fatalf("require bearer: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestRequireBearerAcceptsMinimalValidatorInterface(t *testing.T) {
 
 func TestRequireBearerRejectsInvalidHeader(t *testing.T) {
 	auth := &bearerOnlyStub{}
-	middleware, err := authhttp.RequireBearer(auth)
+	middleware, err := authbasic.RequireBearer(auth)
 	if err != nil {
 		t.Fatalf("require bearer: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestRequireBearerRejectsInvalidHeader(t *testing.T) {
 
 func TestRequireBearerRejectsInvalidToken(t *testing.T) {
 	auth := &bearerOnlyStub{}
-	middleware, err := authhttp.RequireBearer(auth)
+	middleware, err := authbasic.RequireBearer(auth)
 	if err != nil {
 		t.Fatalf("require bearer: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestRequireBearerPropagatesStoreUnavailable(t *testing.T) {
 	auth := &bearerOnlyStub{
 		err: authjwt.ErrStoreUnavailable,
 	}
-	middleware, err := authhttp.RequireBearer(auth)
+	middleware, err := authbasic.RequireBearer(auth)
 	if err != nil {
 		t.Fatalf("require bearer: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestRequireBearerRejectsMisconfiguredValidator(t *testing.T) {
 	auth := &bearerOnlyStub{
 		err: authjwt.ErrManagerMisconfigured,
 	}
-	middleware, err := authhttp.RequireBearer(auth)
+	middleware, err := authbasic.RequireBearer(auth)
 	if err != nil {
 		t.Fatalf("require bearer: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestRequireBearerRejectsMisconfiguredValidator(t *testing.T) {
 
 func TestOptionalBearerAllowsMissingToken(t *testing.T) {
 	auth := &bearerOnlyStub{}
-	middleware, err := authhttp.OptionalBearer(auth)
+	middleware, err := authbasic.OptionalBearer(auth)
 	if err != nil {
 		t.Fatalf("optional bearer: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestOptionalBearerAllowsMissingToken(t *testing.T) {
 
 func TestOptionalBearerRejectsInvalidToken(t *testing.T) {
 	auth := &bearerOnlyStub{}
-	middleware, err := authhttp.OptionalBearer(auth)
+	middleware, err := authbasic.OptionalBearer(auth)
 	if err != nil {
 		t.Fatalf("optional bearer: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestOptionalBearerRejectsInvalidToken(t *testing.T) {
 }
 
 func TestRequireAPIKeyAcceptsCustomHeader(t *testing.T) {
-	middleware, err := authhttp.RequireAPIKey(authhttp.APIKeyValidatorFunc(func(ctx context.Context, key string) (bool, error) {
+	middleware, err := authbasic.RequireAPIKey(authbasic.APIKeyValidatorFunc(func(ctx context.Context, key string) (bool, error) {
 		return key == "secret", nil
 	}), "X-Node-Secret")
 	if err != nil {
@@ -240,7 +240,7 @@ func TestRequireAPIKeyAcceptsCustomHeader(t *testing.T) {
 }
 
 func TestRequireAPIKeyRejectsMissingKey(t *testing.T) {
-	middleware, err := authhttp.RequireAPIKey(authhttp.APIKeyValidatorFunc(func(ctx context.Context, key string) (bool, error) {
+	middleware, err := authbasic.RequireAPIKey(authbasic.APIKeyValidatorFunc(func(ctx context.Context, key string) (bool, error) {
 		return true, nil
 	}), "")
 	if err != nil {
