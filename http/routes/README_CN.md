@@ -13,7 +13,7 @@
 ## Blueprint
 
 ```go
-bearer, err := authbasic.RequireBearer(manager)
+bearer, err := authhttp.RequireBearer(manager)
 if err != nil {
 	return err
 }

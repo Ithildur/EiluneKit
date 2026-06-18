@@ -1,6 +1,6 @@
-# auth/http/rbac
+# auth/rbac/http
 
-`auth/http/rbac` 将 `auth/rbac.Service` 适配为 JSON bearer 路由。
+`auth/rbac/http` 将 `auth/rbac.Service` 适配为 JSON bearer 路由。
 
 它用于需要多用户、角色检查、scope 检查或 opaque API token 的应用。该包只暴露传输层；认证流程仍由 `auth/rbac` 负责，用户存储、密码 hash、角色分配和 token 持久化仍由应用负责。
 
@@ -34,4 +34,4 @@ r.With(authz.RequireScope("vm:read")).Get("/vms", listVMs)
 
 角色层级是应用策略。通过 `Options.RolePolicy` 或 `NewMiddleware(service, policy)` 传入；本包不知道 `admin`、`operator`、`viewer`、`vm_user` 这些业务角色。
 
-admin-only 应用只有一个共享凭据且需要 cookie refresh session 时，使用 `auth/http/basic`。
+admin-only 应用只有一个共享凭据且需要 cookie refresh session 时，使用 `auth/http`。

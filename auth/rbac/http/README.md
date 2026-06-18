@@ -1,6 +1,6 @@
-# auth/http/rbac
+# auth/rbac/http
 
-`auth/http/rbac` adapts `auth/rbac.Service` to JSON bearer routes.
+`auth/rbac/http` adapts `auth/rbac.Service` to JSON bearer routes.
 
 Use it for applications that need multiple users, role checks, scope checks, or opaque API tokens. It exposes the transport layer only; `auth/rbac` still owns the auth flow and the application still owns user storage, password hashing, role assignment, and token persistence.
 
@@ -34,4 +34,4 @@ r.With(authz.RequireScope("vm:read")).Get("/vms", listVMs)
 
 Role hierarchy is application policy. Pass `Options.RolePolicy` or `NewMiddleware(service, policy)`; this package does not know roles such as `admin`, `operator`, `viewer`, or `vm_user`.
 
-Use `auth/http/basic` instead for admin-only applications that only need one shared credential and cookie-backed refresh sessions.
+Use `auth/http` instead for admin-only applications that only need one shared credential and cookie-backed refresh sessions.

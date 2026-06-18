@@ -63,4 +63,4 @@ API token 会认证为 `auth.PrincipalKindAPIToken`，角色和 scope 来自 `AP
 - API token 只生成一次、只返回一次明文，按 hash 加载，并且只在 service 接受后标记为已使用。
 - hook 可能并发调用，返回后不得继续持有 `context.Context`。
 
-需要通过 JSON bearer HTTP 路由和角色/scope middleware 暴露同一套服务时，使用 `auth/http/rbac`。
+需要通过 JSON bearer HTTP 路由和角色/scope middleware 暴露同一套服务时，使用 `auth/rbac/http`。

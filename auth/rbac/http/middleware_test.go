@@ -1,4 +1,4 @@
-package rbac_test
+package rbachttp_test
 
 import (
 	"context"
@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	authcore "github.com/Ithildur/EiluneKit/auth"
-	rbachttp "github.com/Ithildur/EiluneKit/auth/http/rbac"
 	corerbac "github.com/Ithildur/EiluneKit/auth/rbac"
+	rbachttp "github.com/Ithildur/EiluneKit/auth/rbac/http"
 	"github.com/Ithildur/EiluneKit/http/routes"
 )
 

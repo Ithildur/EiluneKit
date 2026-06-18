@@ -1,4 +1,4 @@
-package basic
+package authhttp
 
 import (
 	"context"
@@ -30,7 +30,7 @@ type refreshTokenContextKey struct{}
 // 调用 bearer, err := RequireBearer(auth)，再执行 r.Use(bearer)。
 // Example / 示例:
 //
-//	bearer, err := authbasic.RequireBearer(jwtManager)
+//	bearer, err := authhttp.RequireBearer(jwtManager)
 //	if err != nil { ... }
 //	r.Use(bearer)
 func RequireBearer(auth AccessTokenValidator) (func(stdhttp.Handler) stdhttp.Handler, error) {

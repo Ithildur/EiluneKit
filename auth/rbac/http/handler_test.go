@@ -1,4 +1,4 @@
-package rbac_test
+package rbachttp_test
 
 import (
 	"bytes"
@@ -9,9 +9,9 @@ import (
 	"testing"
 
 	authcore "github.com/Ithildur/EiluneKit/auth"
-	rbachttp "github.com/Ithildur/EiluneKit/auth/http/rbac"
 	authjwt "github.com/Ithildur/EiluneKit/auth/jwt"
 	corerbac "github.com/Ithildur/EiluneKit/auth/rbac"
+	rbachttp "github.com/Ithildur/EiluneKit/auth/rbac/http"
 	authstore "github.com/Ithildur/EiluneKit/auth/store"
 
 	"github.com/go-chi/chi/v5"

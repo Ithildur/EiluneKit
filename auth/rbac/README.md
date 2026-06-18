@@ -63,4 +63,4 @@ API tokens authenticate to `auth.PrincipalKindAPIToken`. They carry their own ro
 - API tokens are generated once, returned as plaintext once, loaded by hash, and marked used only after the service accepts them.
 - Hooks may be called concurrently and must not retain `context.Context` after returning.
 
-Use `auth/http/rbac` when the same service should be exposed through JSON bearer HTTP routes and role/scope middleware.
+Use `auth/rbac/http` when the same service should be exposed through JSON bearer HTTP routes and role/scope middleware.

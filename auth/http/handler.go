@@ -1,4 +1,4 @@
-package basic
+package authhttp
 
 import (
 	"context"
@@ -67,7 +67,7 @@ func NewHandler(manager TokenManager, opts Options) (*Handler, error) {
 // 调用 Register(r) 挂载路由及其认证中间件。
 func (h *Handler) Register(r chi.Router) error {
 	if h == nil {
-		return fmt.Errorf("authbasic: handler is nil")
+		return fmt.Errorf("authhttp: handler is nil")
 	}
 	return routes.Mount(r, "", h.Routes())
 }
@@ -80,7 +80,7 @@ func (h *Handler) Register(r chi.Router) error {
 // Nil Handler 无效，调用时会 panic。
 func (h *Handler) Routes() []routes.Route {
 	if h == nil {
-		panic("authbasic: handler is nil")
+		panic("authhttp: handler is nil")
 	}
 
 	refresh := h.requireRefreshCookie()

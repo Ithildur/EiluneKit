@@ -1,4 +1,4 @@
-package basic
+package authhttp
 
 import (
 	"log/slog"
