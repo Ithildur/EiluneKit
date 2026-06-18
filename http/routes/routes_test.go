@@ -123,6 +123,58 @@ func TestFuncReadsRegexpDynamicPath(t *testing.T) {
 	}
 }
 
+func TestFuncReadsSimpleRegexpDynamicPath(t *testing.T) {
+	blueprint := routes.NewBlueprint()
+	blueprint.Get(
+		"/users/{id:[0-9]+}",
+		"Get user",
+		routes.Func(func(w http.ResponseWriter, r *http.Request, id string) {
+			if got, want := id, "42"; got != want {
+				t.Fatalf("expected id %q, got %q", want, got)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		}),
+	)
+
+	r := chi.NewRouter()
+	if err := blueprint.Mount(r); err != nil {
+		t.Fatalf("mount: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/users/42", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
+	}
+}
+
+func TestFuncReadsWildcardDynamicPath(t *testing.T) {
+	blueprint := routes.NewBlueprint()
+	blueprint.Get(
+		"/files/*",
+		"Get file",
+		routes.Func(func(w http.ResponseWriter, r *http.Request, path string) {
+			if got, want := path, "a/b/c.txt"; got != want {
+				t.Fatalf("expected path %q, got %q", want, got)
+			}
+			w.WriteHeader(http.StatusNoContent)
+		}),
+	)
+
+	r := chi.NewRouter()
+	if err := blueprint.Mount(r); err != nil {
+		t.Fatalf("mount: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/files/a/b/c.txt", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
+	}
+}
+
 func TestFuncReadsPrefixedDynamicPath(t *testing.T) {
 	blueprint := routes.NewBlueprint()
 	blueprint.Get(
