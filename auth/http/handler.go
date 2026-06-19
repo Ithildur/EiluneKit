@@ -151,7 +151,7 @@ func (h *Handler) Routes() []routes.Route {
 	sessions.Delete(
 		"/{sid}",
 		"Revoke a specific session for current user",
-		routes.Func(h.handleDeleteSession),
+		routes.Handler(stdhttp.HandlerFunc(h.handleDeleteSession)),
 	)
 	authRoutes.Include("/sessions", sessions)
 
@@ -408,11 +408,12 @@ func (h *Handler) handleDeleteAllSessions(w stdhttp.ResponseWriter, r *stdhttp.R
 	w.WriteHeader(stdhttp.StatusNoContent)
 }
 
-func (h *Handler) handleDeleteSession(w stdhttp.ResponseWriter, r *stdhttp.Request, sessionID string) {
+func (h *Handler) handleDeleteSession(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 	claims, ok := h.authenticatedClaims(w, r)
 	if !ok {
 		return
 	}
+	sessionID := chi.URLParam(r, "sid")
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
 		response.WriteJSONError(w, stdhttp.StatusBadRequest, "invalid_session", "session id is required")

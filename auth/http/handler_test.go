@@ -474,6 +474,44 @@ func TestRegisterRejectsNilHandler(t *testing.T) {
 	}
 }
 
+func TestRegisterSupportsDynamicAuthBasePath(t *testing.T) {
+	manager := authenticatedManager()
+	opts := testOptions(stubAuthenticator("admin", "secret", "user-1"))
+	opts.BasePath = "/tenants/{tenantID}/auth"
+	r := mustNewTestRouter(t, manager, opts)
+
+	rec := serve(r, http.MethodDelete, "/tenants/acme/auth/sessions/sid-2", "", func(req *http.Request) {
+		req.Header.Set("Authorization", "Bearer access")
+	})
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
+	}
+	if manager.revokeSessionUserID != "user-1" || manager.revokeSessionID != "sid-2" {
+		t.Fatalf("unexpected revoke session call: user=%q sid=%q", manager.revokeSessionUserID, manager.revokeSessionID)
+	}
+}
+
+func TestRoutesSupportDynamicExternalMountPrefix(t *testing.T) {
+	manager := authenticatedManager()
+	handler := mustNewHandler(t, manager, testOptions(stubAuthenticator("admin", "secret", "user-1")))
+	r := chi.NewRouter()
+	if err := routes.Mount(r, "/tenants/{tenantID}", handler.Routes()); err != nil {
+		t.Fatalf("mount routes: %v", err)
+	}
+
+	rec := serve(r, http.MethodDelete, "/tenants/acme/auth/sessions/sid-2", "", func(req *http.Request) {
+		req.Header.Set("Authorization", "Bearer access")
+	})
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
+	}
+	if manager.revokeSessionUserID != "user-1" || manager.revokeSessionID != "sid-2" {
+		t.Fatalf("unexpected revoke session call: user=%q sid=%q", manager.revokeSessionUserID, manager.revokeSessionID)
+	}
+}
+
 func TestRoutesExportAuthRequirement(t *testing.T) {
 	handler := mustNewHandler(t, &stubManager{}, testOptions(stubAuthenticator("admin", "secret", "user-1")))
 	routeList := handler.Routes()
