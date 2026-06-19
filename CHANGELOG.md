@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.2.5 - 2026-06-19
+## v0.2.6 - 2026-06-19
 
 ### Breaking
 
@@ -8,18 +8,23 @@
 
 ### Added
 
-- Added shared `auth.Principal` context helpers for authenticated users and API tokens.
 - Added reusable auth login lockout primitives and optional `auth/http` failed-login lockout.
+
+### Security
+
+- Bounded in-memory login lockout key storage and stopped RBAC HTTP login lockout keys from retaining raw usernames.
+
+## v0.2.5 - 2026-06-19
+
+### Added
+
+- Added shared `auth.Principal` context helpers for authenticated users and API tokens.
 - Added `auth/rbac` for multi-user auth with user status validation, role policy hooks, default in-memory login lockout, audit hooks, and opaque API token contracts.
 - Added `auth/rbac/http` JSON bearer routes for login, refresh, logout, current principal, role middleware, and scope middleware.
 
 ### Changed
 
 - Retracted `v0.2.4`; use `v0.2.5`.
-
-### Security
-
-- Bounded in-memory login lockout key storage and stopped RBAC HTTP login lockout keys from retaining raw usernames.
 
 ### Fixed
 
