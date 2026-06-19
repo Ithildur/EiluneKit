@@ -1,6 +1,8 @@
 package rbachttp
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -227,7 +229,8 @@ func (h *Handler) lockoutKey(r *http.Request, username string) (string, error) {
 	if !ok {
 		return "", corerbac.ErrLockoutKeyRequired
 	}
-	return "ip:" + ip.String() + "|username:" + strings.TrimSpace(username), nil
+	sum := sha256.Sum256([]byte(strings.TrimSpace(username)))
+	return "ip:" + ip.String() + "|username-sha256:" + hex.EncodeToString(sum[:]), nil
 }
 
 func loginSessionOnly(persistence string) (bool, error) {

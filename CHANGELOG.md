@@ -17,6 +17,10 @@
 
 - Retracted `v0.2.4`; use `v0.2.5`.
 
+### Security
+
+- Bounded in-memory login lockout key storage and stopped RBAC HTTP login lockout keys from retaining raw usernames.
+
 ### Fixed
 
 - Mapped JWT unauthorized errors from auth HTTP middleware to `401 Unauthorized` instead of a generic auth failure.

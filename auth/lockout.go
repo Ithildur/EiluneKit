@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"strings"
 	"sync"
@@ -66,8 +68,10 @@ type MemoryLockoutOptions struct {
 }
 
 // MemoryLockout tracks login failures in memory.
+// It stores fixed-size hashes of caller-provided keys.
 // Use NewMemoryLockout to create it; the zero value is not ready for use.
 // MemoryLockout 在内存中跟踪登录失败。
+// 它存储调用方提供 key 的固定长度 hash。
 // 使用 NewMemoryLockout 创建；零值不可直接使用。
 type MemoryLockout struct {
 	mu     sync.Mutex
@@ -120,7 +124,7 @@ func (l *MemoryLockout) Check(ctx context.Context, key string) (time.Time, bool,
 	if l == nil {
 		return time.Time{}, false, ErrLockoutMissing
 	}
-	key, err := requireLockoutKey(key)
+	key, err := memoryLockoutKey(key)
 	if err != nil {
 		return time.Time{}, false, err
 	}
@@ -153,7 +157,7 @@ func (l *MemoryLockout) RecordFailure(ctx context.Context, key string) (time.Tim
 	if l == nil {
 		return time.Time{}, false, ErrLockoutMissing
 	}
-	key, err := requireLockoutKey(key)
+	key, err := memoryLockoutKey(key)
 	if err != nil {
 		return time.Time{}, false, err
 	}
@@ -183,7 +187,7 @@ func (l *MemoryLockout) Clear(ctx context.Context, key string) error {
 	if l == nil {
 		return ErrLockoutMissing
 	}
-	key, err := requireLockoutKey(key)
+	key, err := memoryLockoutKey(key)
 	if err != nil {
 		return err
 	}
@@ -193,12 +197,13 @@ func (l *MemoryLockout) Clear(ctx context.Context, key string) error {
 	return nil
 }
 
-func requireLockoutKey(key string) (string, error) {
+func memoryLockoutKey(key string) (string, error) {
 	key = strings.TrimSpace(key)
 	if key == "" {
 		return "", ErrLockoutKeyRequired
 	}
-	return key, nil
+	sum := sha256.Sum256([]byte(key))
+	return "sha256:" + hex.EncodeToString(sum[:]), nil
 }
 
 func (l *MemoryLockout) ensureCapacity(now time.Time, keep string) {

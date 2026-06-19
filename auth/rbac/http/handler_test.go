@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	authcore "github.com/Ithildur/EiluneKit/auth"
 	authjwt "github.com/Ithildur/EiluneKit/auth/jwt"
@@ -20,6 +22,23 @@ import (
 type testUserStore struct {
 	byID       map[string]corerbac.User
 	byUsername map[string]string
+}
+
+type captureLockout struct {
+	keys []string
+}
+
+func (l *captureLockout) Check(ctx context.Context, key string) (time.Time, bool, error) {
+	return time.Time{}, false, nil
+}
+
+func (l *captureLockout) RecordFailure(ctx context.Context, key string) (time.Time, bool, error) {
+	l.keys = append(l.keys, key)
+	return time.Time{}, false, nil
+}
+
+func (l *captureLockout) Clear(ctx context.Context, key string) error {
+	return nil
 }
 
 func newTestUserStore(users ...corerbac.User) *testUserStore {
@@ -152,6 +171,57 @@ func TestHandlerLoginRejectsMissingClientIP(t *testing.T) {
 	payload := decodePayload(t, rec)
 	if payload["code"] != "auth_misconfigured" || payload["message"] != "auth is misconfigured" {
 		t.Fatalf("unexpected error payload: %#v", payload)
+	}
+}
+
+func TestHandlerLoginUsesBoundedLockoutKey(t *testing.T) {
+	manager, err := authjwt.New("0123456789abcdef0123456789abcdef", authstore.NewMemoryStore())
+	if err != nil {
+		t.Fatalf("new jwt manager: %v", err)
+	}
+	lockout := &captureLockout{}
+	service, err := corerbac.NewService(corerbac.ServiceOptions{
+		Users:     newTestUserStore(),
+		Passwords: corerbac.PasswordVerifierFunc(func(ctx context.Context, user corerbac.User, password string) (bool, error) { return false, nil }),
+		Tokens:    manager,
+		Lockout:   lockout,
+	})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	handler, err := rbachttp.NewHandler(service, rbachttp.Options{})
+	if err != nil {
+		t.Fatalf("new handler: %v", err)
+	}
+	router := chi.NewRouter()
+	if err := handler.Register(router); err != nil {
+		t.Fatalf("register handler: %v", err)
+	}
+
+	username := strings.Repeat("a", 900*1024)
+	body, err := json.Marshal(map[string]string{
+		"username": username,
+		"password": "wrong",
+	})
+	if err != nil {
+		t.Fatalf("marshal login body: %v", err)
+	}
+	rec := serve(router, http.MethodPost, "/auth/login", string(body), nil)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusUnauthorized, rec.Code, rec.Body.String())
+	}
+	if len(lockout.keys) != 1 {
+		t.Fatalf("expected one lockout key, got %d", len(lockout.keys))
+	}
+	key := lockout.keys[0]
+	if len(key) > 128 {
+		t.Fatalf("lockout key length = %d, want <= 128", len(key))
+	}
+	if !strings.Contains(key, "|username-sha256:") {
+		t.Fatalf("expected username hash in lockout key, got %q", key)
+	}
+	if strings.Contains(key, strings.Repeat("a", 128)) {
+		t.Fatal("lockout key retained attacker-controlled username")
 	}
 }
 
