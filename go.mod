@@ -28,3 +28,5 @@ require (
 	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/text v0.36.0 // indirect
 )
+
+retract v0.2.4 // checksum mismatch after tag replacement; use v0.2.5
