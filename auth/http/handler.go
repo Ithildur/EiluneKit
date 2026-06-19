@@ -13,6 +13,7 @@ import (
 	"github.com/Ithildur/EiluneKit/auth"
 	authjwt "github.com/Ithildur/EiluneKit/auth/jwt"
 	authsession "github.com/Ithildur/EiluneKit/auth/session"
+	"github.com/Ithildur/EiluneKit/clientip"
 	"github.com/Ithildur/EiluneKit/http/decoder"
 	"github.com/Ithildur/EiluneKit/http/middleware"
 	"github.com/Ithildur/EiluneKit/http/response"
@@ -178,6 +179,16 @@ func (h *Handler) handleLogin(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		return
 	}
 
+	lockoutKey, err := h.loginLockoutKey(r, req.Username)
+	if err != nil {
+		writeAuthFailure(w, err)
+		return
+	}
+	if err := h.checkLoginLockout(r.Context(), lockoutKey); err != nil {
+		writeAuthFailure(w, err)
+		return
+	}
+
 	tokens, ok, err := h.service.Login(r.Context(), req.Username, req.Password, auth.IssueOptions{
 		SessionOnly: sessionOnly,
 	})
@@ -186,7 +197,16 @@ func (h *Handler) handleLogin(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		return
 	}
 	if !ok {
+		if err := h.recordLoginFailure(r.Context(), lockoutKey); err != nil {
+			writeAuthFailure(w, err)
+			return
+		}
 		response.WriteJSONError(w, stdhttp.StatusUnauthorized, "unauthorized", "invalid credentials")
+		return
+	}
+	if err := h.clearLoginLockout(r.Context(), lockoutKey); err != nil {
+		h.revokeIssuedRefresh(r.Context(), tokens.UserID, tokens.Refresh, "auth_login_lockout_clear_revoke_failed")
+		writeAuthFailure(w, err)
 		return
 	}
 	if err := h.options.Events.handleLogin(r.Context(), LoginEvent{
@@ -197,11 +217,7 @@ func (h *Handler) handleLogin(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		RefreshExpiresAt: tokens.RefreshExpiresAt,
 	}); err != nil {
 		h.logEventError(r.Context(), "auth_login_event_failed", err, slog.String("user_id", tokens.UserID), slog.Bool("session_only", sessionOnly))
-		revokeCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), eventRevokeTimeout)
-		defer cancel()
-		if revokeErr := h.service.Logout(revokeCtx, tokens.Refresh); revokeErr != nil {
-			h.logEventError(r.Context(), "auth_login_event_revoke_failed", revokeErr, slog.String("user_id", tokens.UserID))
-		}
+		h.revokeIssuedRefresh(r.Context(), tokens.UserID, tokens.Refresh, "auth_login_event_revoke_failed")
 		writeAuthEventFailure(w)
 		return
 	}
@@ -216,6 +232,72 @@ func (h *Handler) handleLogin(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		ExpiresAt:   tokens.AccessExpiresAt.Format(time.RFC3339),
 		CSRFToken:   csrf,
 	})
+}
+
+func (h *Handler) loginLockoutKey(r *stdhttp.Request, username string) (string, error) {
+	if h.options.LoginLockout == nil {
+		return "", nil
+	}
+	if h.options.LoginLockoutKeyFunc != nil {
+		key := strings.TrimSpace(h.options.LoginLockoutKeyFunc(r, username))
+		if key == "" {
+			return "", auth.ErrLockoutKeyRequired
+		}
+		return key, nil
+	}
+	ip, ok := clientip.FromRequest(r, clientip.Options{
+		TrustedProxies: append([]netip.Prefix(nil), h.options.TrustedProxies...),
+	})
+	if !ok {
+		return "", auth.ErrLockoutKeyRequired
+	}
+	return "ip:" + ip.String(), nil
+}
+
+func (h *Handler) checkLoginLockout(ctx context.Context, key string) error {
+	if h.options.LoginLockout == nil {
+		return nil
+	}
+	until, locked, err := h.options.LoginLockout.Check(ctx, key)
+	if err != nil {
+		return fmt.Errorf("check login lockout: %w", err)
+	}
+	if locked {
+		return auth.LockedError{Until: until}
+	}
+	return nil
+}
+
+func (h *Handler) recordLoginFailure(ctx context.Context, key string) error {
+	if h.options.LoginLockout == nil {
+		return nil
+	}
+	until, locked, err := h.options.LoginLockout.RecordFailure(ctx, key)
+	if err != nil {
+		return fmt.Errorf("record login failure: %w", err)
+	}
+	if locked {
+		return auth.LockedError{Until: until}
+	}
+	return nil
+}
+
+func (h *Handler) clearLoginLockout(ctx context.Context, key string) error {
+	if h.options.LoginLockout == nil {
+		return nil
+	}
+	if err := h.options.LoginLockout.Clear(ctx, key); err != nil {
+		return fmt.Errorf("clear login lockout: %w", err)
+	}
+	return nil
+}
+
+func (h *Handler) revokeIssuedRefresh(ctx context.Context, userID, refresh, msg string) {
+	revokeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), eventRevokeTimeout)
+	defer cancel()
+	if revokeErr := h.service.Logout(revokeCtx, refresh); revokeErr != nil {
+		h.logEventError(ctx, msg, revokeErr, slog.String("user_id", userID))
+	}
 }
 
 func (h *Handler) logEventError(ctx context.Context, msg string, err error, attrs ...slog.Attr) {

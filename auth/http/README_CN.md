@@ -108,7 +108,7 @@ header 名为空时默认使用 `X-API-Key`。
 
 | 路由 | 认证 | 中间件 |
 |---|---|---|
-| `POST /auth/login` | `public` | 登录限流、请求体限制、JSON body |
+| `POST /auth/login` | `public` | 登录限流、可选登录锁定、请求体限制、JSON body |
 | `POST /auth/refresh` | `required` | refresh-cookie + CSRF |
 | `POST /auth/logout` | `required` | refresh-cookie + CSRF |
 | `GET /auth/sessions` | `required` | `RequireBearer` |
@@ -136,10 +136,27 @@ err := routes.Mount(r, "", routeList)
 - `TrustedProxies`：登录限流和安全 cookie 协议判断使用的转发代理信任边界
 - `MaxBodyBytes`：认证端点请求体大小限制
 - `RateLimit`：登录限流配置
+- `LoginLockout`：可选的登录失败锁定。凭据失败时记录 lockout key；达到阈值后返回 `429 login_locked`；登录成功后清除该 key。
+- `LoginLockoutKeyFunc`：可选的 `LoginLockout` key 函数；默认 key 使用精确客户端 IP。设置 `LoginLockout` 时，key 不能为空。只有 `LoginAuthenticator` 确实使用 username 时，才把 username 纳入 key。
 - `Events`：认证生命周期 hook。`Events.Login` 在凭据通过且 token 已签发后、cookie 和响应体写出前执行；返回错误会尝试吊销新的 refresh session 并让登录请求失败。hook 可能并发调用。
 - `Logger`：可选 `*slog.Logger`，用于记录认证生命周期 hook 失败和补偿吊销失败。
 
 只有设置 `TrustedProxies` 才信任转发头。默认限流 key 使用 `RemoteAddr`。
+
+单进程部署可以使用 `auth.NewMemoryLockout`：
+
+```go
+authHandler, err := authhttp.NewHandler(manager, authhttp.Options{
+	LoginAuthenticator: staticAuth,
+	LoginLockout: auth.NewMemoryLockout(auth.MemoryLockoutOptions{
+		MaxFailures: 5,
+		Window:      15 * time.Minute,
+		Lockout:     15 * time.Minute,
+	}),
+})
+```
+
+多实例部署应传入 Redis 或 SQL 支撑的 `auth.Lockout`，让登录失败状态在进程间共享。
 
 默认情况下，cookie 的 `Secure` 和 `SameSite` 会从请求推导：TLS 总是启用 secure cookie；只有可信代理发来的 `X-Forwarded-Proto: https` 才参与判断。部署策略需要固定模式时设置 `CookieSameSite`，例如同站应用使用 `http.SameSiteLaxMode`，跨站 SPA 使用 `http.SameSiteNoneMode`。
 

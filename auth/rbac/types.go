@@ -78,7 +78,9 @@ type LoginRequest struct {
 	Username    string
 	Password    string
 	SessionOnly bool
-	LockoutKey  string
+	// LockoutKey identifies the login caller and must be non-empty.
+	// LockoutKey 标识登录调用方，不能为空。
+	LockoutKey string
 }
 
 // Tokens carries a newly issued token pair and principal.

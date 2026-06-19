@@ -140,6 +140,21 @@ func TestHandlerLoginRefreshAndMeUseJSONBearerTokens(t *testing.T) {
 	}
 }
 
+func TestHandlerLoginRejectsMissingClientIP(t *testing.T) {
+	_, router := newTestHandler(t)
+
+	rec := serve(router, http.MethodPost, "/auth/login", `{"username":"alice","password":"secret","persistence":"session"}`, func(req *http.Request) {
+		req.RemoteAddr = ""
+	})
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusInternalServerError, rec.Code, rec.Body.String())
+	}
+	payload := decodePayload(t, rec)
+	if payload["code"] != "auth_misconfigured" || payload["message"] != "auth is misconfigured" {
+		t.Fatalf("unexpected error payload: %#v", payload)
+	}
+}
+
 func TestHandlerLogoutRejectsInvalidRefreshTokenAsUnauthorized(t *testing.T) {
 	_, router := newTestHandler(t)
 

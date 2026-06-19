@@ -388,6 +388,19 @@ func TestLogin(t *testing.T) {
 				wantMsg:    "auth is misconfigured",
 			},
 			{
+				name: "login_lockout_empty_key",
+				build: func(t *testing.T) *authhttp.Handler {
+					opts := testOptions(stubAuthenticator("admin", "secret", "user-1"))
+					opts.LoginLockout = authcore.NewMemoryLockout(authcore.MemoryLockoutOptions{})
+					opts.LoginLockoutKeyFunc = func(*http.Request, string) string { return " " }
+					return mustNewHandler(t, &stubManager{}, opts)
+				},
+				body:       `{"username":"admin","password":"secret","persistence":"persistent"}`,
+				wantStatus: http.StatusInternalServerError,
+				wantCode:   "auth_misconfigured",
+				wantMsg:    "auth is misconfigured",
+			},
+			{
 				name: "missing_persistence",
 				build: func(t *testing.T) *authhttp.Handler {
 					return mustNewHandler(t, &stubManager{}, testOptions(stubAuthenticator("admin", "secret", "user-1")))
@@ -419,6 +432,34 @@ func TestLogin(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestLoginLockoutRecordsFailuresAndClearsAfterSuccess(t *testing.T) {
+	now := time.Now().UTC()
+	manager := issuingManager(now)
+	opts := testOptions(stubAuthenticator("admin", "secret", "user-1"))
+	opts.LoginLockout = authcore.NewMemoryLockout(authcore.MemoryLockoutOptions{
+		MaxFailures: 2,
+		Window:      time.Minute,
+		Lockout:     time.Minute,
+	})
+	r := mustNewTestRouter(t, manager, opts)
+
+	login := func(password string) *httptest.ResponseRecorder {
+		body := `{"username":"admin","password":"` + password + `","persistence":"persistent"}`
+		return serve(r, http.MethodPost, "/auth/login", body, func(req *http.Request) {
+			req.Header.Set("Content-Type", "application/json")
+			req.RemoteAddr = "192.0.2.10:1234"
+		})
+	}
+
+	assertErrorResponse(t, login("wrong"), http.StatusUnauthorized, "unauthorized", "invalid credentials")
+	if rec := login("secret"); rec.Code != http.StatusOK {
+		t.Fatalf("expected successful login to clear lockout state, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	assertErrorResponse(t, login("wrong"), http.StatusUnauthorized, "unauthorized", "invalid credentials")
+	assertErrorResponse(t, login("wrong"), http.StatusTooManyRequests, "login_locked", "login locked")
+	assertErrorResponse(t, login("secret"), http.StatusTooManyRequests, "login_locked", "login locked")
 }
 
 func TestRegisterRejectsNilHandler(t *testing.T) {

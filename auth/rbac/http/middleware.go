@@ -225,6 +225,8 @@ func isAuthMisconfigured(err error) bool {
 		errors.Is(err, corerbac.ErrTokenManagerMissing) ||
 		errors.Is(err, corerbac.ErrAPITokenStoreMissing) ||
 		errors.Is(err, corerbac.ErrUserIDRequired) ||
+		errors.Is(err, corerbac.ErrLockoutMissing) ||
+		errors.Is(err, corerbac.ErrLockoutKeyRequired) ||
 		errors.Is(err, authjwt.ErrManagerMisconfigured) ||
 		errors.Is(err, authjwt.ErrUserIDRequired) ||
 		errors.Is(err, authjwt.ErrSessionIDRequired)

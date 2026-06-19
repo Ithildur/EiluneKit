@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"strings"
 
+	authcore "github.com/Ithildur/EiluneKit/auth"
 	authsession "github.com/Ithildur/EiluneKit/auth/session"
 )
 
@@ -50,6 +51,16 @@ type Options struct {
 	// RateLimit configures login rate limiting.
 	// RateLimit 配置登录限流。
 	RateLimit *RateLimitOptions
+	// LoginLockout records failed logins and locks its key after too many failures.
+	// LoginLockout 记录登录失败，并在失败过多后锁定对应 key。
+	LoginLockout authcore.Lockout
+	// LoginLockoutKeyFunc returns the lockout key for a login attempt.
+	// The default key uses the client IP when LoginLockout is set.
+	// When LoginLockout is set, the key must be non-empty.
+	// LoginLockoutKeyFunc 返回一次登录尝试的锁定 key。
+	// 设置 LoginLockout 时，默认 key 使用客户端 IP。
+	// 设置 LoginLockout 时，key 不能为空。
+	LoginLockoutKeyFunc func(*http.Request, string) string
 	// Events configures auth lifecycle hooks.
 	// Events 配置认证生命周期 hook。
 	Events Events
@@ -107,6 +118,12 @@ func applyOptions(base, override Options) Options {
 	}
 	if override.RateLimit != nil {
 		base.RateLimit = mergeRateLimitOptions(base.RateLimit, override.RateLimit)
+	}
+	if override.LoginLockout != nil {
+		base.LoginLockout = override.LoginLockout
+	}
+	if override.LoginLockoutKeyFunc != nil {
+		base.LoginLockoutKeyFunc = override.LoginLockoutKeyFunc
 	}
 	base.Events = override.Events
 	if override.Logger != nil {

@@ -40,6 +40,8 @@ if err != nil {
 
 多实例部署时，用 Redis 或数据库支撑的实现替换默认内存 `Lockout`，让登录失败次数在进程间保持一致。多个进程都接受 API token 时，`APITokenStore` 也应使用共享存储。
 
+直接调用 `Service.Login` 时必须提供非空 `LoginRequest.LockoutKey`。HTTP handler 会从客户端 IP 和 username 推导。
+
 ## Principal
 
 用户认证成功后返回 `auth.Principal`：

@@ -83,6 +83,9 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (Tokens, bool, er
 	}
 	req.Username = strings.TrimSpace(req.Username)
 	req.LockoutKey = strings.TrimSpace(req.LockoutKey)
+	if s.lockout != nil && req.LockoutKey == "" {
+		return Tokens{}, false, ErrLockoutKeyRequired
+	}
 	if req.Username == "" || req.Password == "" {
 		if err := s.rejectLogin(ctx, req, "", LoginFailureInvalidCredentials); err != nil {
 			return Tokens{}, false, err

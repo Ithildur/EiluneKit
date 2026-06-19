@@ -4,7 +4,8 @@ package rbac
 
 import (
 	"errors"
-	"time"
+
+	authcore "github.com/Ithildur/EiluneKit/auth"
 )
 
 var (
@@ -38,9 +39,15 @@ var (
 	// ErrAPITokenIDRequired reports an empty API token ID.
 	// ErrAPITokenIDRequired 表示缺少 API token ID。
 	ErrAPITokenIDRequired = errors.New("api token id is required")
+	// ErrLockoutMissing reports a missing login lockout.
+	// ErrLockoutMissing 表示缺少登录锁定器。
+	ErrLockoutMissing = authcore.ErrLockoutMissing
+	// ErrLockoutKeyRequired reports an empty login lockout key.
+	// ErrLockoutKeyRequired 表示缺少登录锁定 key。
+	ErrLockoutKeyRequired = authcore.ErrLockoutKeyRequired
 	// ErrLoginLocked reports a locked login key.
 	// ErrLoginLocked 表示登录 key 已锁定。
-	ErrLoginLocked = errors.New("login locked")
+	ErrLoginLocked = authcore.ErrLoginLocked
 	// ErrEventFailed reports an auth hook failure.
 	// ErrEventFailed 表示认证 hook 失败。
 	ErrEventFailed = errors.New("auth event failed")
@@ -48,16 +55,4 @@ var (
 
 // LockedError carries the lockout expiration for ErrLoginLocked.
 // LockedError 携带 ErrLoginLocked 的锁定过期时间。
-type LockedError struct {
-	Until time.Time
-}
-
-func (e LockedError) Error() string {
-	return ErrLoginLocked.Error()
-}
-
-// Is reports whether target is ErrLoginLocked.
-// Is 返回 target 是否为 ErrLoginLocked。
-func (e LockedError) Is(target error) bool {
-	return target == ErrLoginLocked
-}
+type LockedError = authcore.LockedError

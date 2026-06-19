@@ -40,6 +40,8 @@ if err != nil {
 
 For multi-instance deployments, replace the default in-memory `Lockout` with a Redis or database-backed implementation so login failures are consistent across processes. `APITokenStore` should also be shared when API tokens are accepted by more than one process.
 
+Direct `Service.Login` callers must provide a non-empty `LoginRequest.LockoutKey`. The HTTP handler derives it from the client IP and username.
+
 ## Principals
 
 Successful user authentication returns an `auth.Principal` with:

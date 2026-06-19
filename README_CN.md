@@ -61,9 +61,9 @@ if err := authHandler.Register(r); err != nil {
 
 ## 包布局
 
-- `auth`：通用 principal 辅助、与传输层无关的认证 service、凭据接口和固定密码辅助
+- `auth`：通用 principal 辅助、与传输层无关的认证 service、凭据接口、固定密码辅助和登录锁定基础能力
 - `auth/rbac`：多用户认证 service、principal 加载、角色策略、登录锁定、API token 和审计 hook 契约
-- `auth/http`：默认 session auth handler、Bearer 中间件、登录限流和会话吊销端点
+- `auth/http`：默认 session auth handler、Bearer 中间件、登录限流、可选登录锁定和会话吊销端点
 - `auth/rbac/http`：JSON bearer 认证 handler 和 RBAC 中间件
 - `auth/jwt`：由 `auth/store` 支撑的 access / refresh JWT 签发与校验
 - `auth/session`：cookie 与 CSRF 辅助

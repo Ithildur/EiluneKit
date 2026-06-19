@@ -227,6 +227,19 @@ func TestLoginUsesDefaultLockout(t *testing.T) {
 	}
 }
 
+func TestLoginRequiresLockoutKey(t *testing.T) {
+	users := newUserStore(rbac.User{ID: "user-1", Username: "alice", Role: "admin"})
+	service := newTestService(t, users, rbac.ServiceOptions{})
+
+	_, _, err := service.Login(context.Background(), rbac.LoginRequest{
+		Username: "alice",
+		Password: "wrong",
+	})
+	if !errors.Is(err, rbac.ErrLockoutKeyRequired) {
+		t.Fatalf("expected ErrLockoutKeyRequired, got %v", err)
+	}
+}
+
 type apiTokenStore struct {
 	created rbac.APIToken
 	token   rbac.APIToken

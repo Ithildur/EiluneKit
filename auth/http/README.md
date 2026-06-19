@@ -108,7 +108,7 @@ Default base path: `/auth`.
 
 | Route | Auth | Middleware |
 |---|---|---|
-| `POST /auth/login` | `public` | login rate limit, body limit, JSON body |
+| `POST /auth/login` | `public` | login rate limit, optional login lockout, body limit, JSON body |
 | `POST /auth/refresh` | `required` | refresh-cookie + CSRF |
 | `POST /auth/logout` | `required` | refresh-cookie + CSRF |
 | `GET /auth/sessions` | `required` | `RequireBearer` |
@@ -136,10 +136,27 @@ err := routes.Mount(r, "", routeList)
 - `TrustedProxies`: forwarded-header trust boundary for rate limiting and secure-cookie detection
 - `MaxBodyBytes`: request body size limit for auth endpoints
 - `RateLimit`: login rate-limit settings
+- `LoginLockout`: optional failed-login lockout. On credential failure it records the lockout key, returns `429 login_locked` when the key reaches its threshold, and clears the key after a successful login.
+- `LoginLockoutKeyFunc`: optional key function for `LoginLockout`; the default key uses the exact client IP. When `LoginLockout` is set, the key must be non-empty. Include username only when `LoginAuthenticator` treats username as meaningful.
 - `Events`: auth lifecycle hooks. `Events.Login` runs after credentials are accepted and tokens are issued, but before cookies and response body are written; returning an error attempts to revoke the new refresh session and fails the login request. Hooks may be called concurrently.
 - `Logger`: optional `*slog.Logger` for auth lifecycle hook failures and revoke-compensation failures.
 
 Forwarded headers are trusted only when `TrustedProxies` is set. The default rate-limit key uses `RemoteAddr`.
+
+Use `auth.NewMemoryLockout` for single-process deployments:
+
+```go
+authHandler, err := authhttp.NewHandler(manager, authhttp.Options{
+	LoginAuthenticator: staticAuth,
+	LoginLockout: auth.NewMemoryLockout(auth.MemoryLockoutOptions{
+		MaxFailures: 5,
+		Window:      15 * time.Minute,
+		Lockout:     15 * time.Minute,
+	}),
+})
+```
+
+For multi-instance deployments, pass a Redis or SQL-backed `auth.Lockout` so failed-login state is shared across processes.
 
 By default, cookie `Secure` and `SameSite` are derived from the request: TLS always enables secure cookies, and `X-Forwarded-Proto: https` only counts from trusted proxies. Set `CookieSameSite` when deployment policy needs an explicit mode, for example `http.SameSiteLaxMode` for same-site apps or `http.SameSiteNoneMode` for cross-site SPAs.
 

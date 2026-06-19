@@ -2,9 +2,14 @@
 
 ## v0.2.5 - 2026-06-19
 
+### Breaking
+
+- Login lockout now fails fast instead of silently bypassing tracking. Empty keys return `auth.ErrLockoutKeyRequired` / `rbac.ErrLockoutKeyRequired`; nil `*auth.MemoryLockout` receivers return `auth.ErrLockoutMissing`.
+
 ### Added
 
 - Added shared `auth.Principal` context helpers for authenticated users and API tokens.
+- Added reusable auth login lockout primitives and optional `auth/http` failed-login lockout.
 - Added `auth/rbac` for multi-user auth with user status validation, role policy hooks, default in-memory login lockout, audit hooks, and opaque API token contracts.
 - Added `auth/rbac/http` JSON bearer routes for login, refresh, logout, current principal, role middleware, and scope middleware.
 

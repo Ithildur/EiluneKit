@@ -61,9 +61,9 @@ Start with the package docs:
 
 ## Package Layout
 
-- `auth`: shared principal helpers, transport-neutral auth service, credential interfaces, and static password helpers
+- `auth`: shared principal helpers, transport-neutral auth service, credential interfaces, static password helpers, and login lockout primitives
 - `auth/rbac`: multi-user auth service, principal loading, role policy, lockout, API token, and audit hook contracts
-- `auth/http`: default session auth handlers, bearer middleware, login rate limiting, and session revocation endpoints
+- `auth/http`: default session auth handlers, bearer middleware, login rate limiting, optional login lockout, and session revocation endpoints
 - `auth/rbac/http`: JSON bearer auth handlers and RBAC middleware
 - `auth/jwt`: access and refresh JWT issuance backed by `auth/store`
 - `auth/session`: cookie and CSRF helpers

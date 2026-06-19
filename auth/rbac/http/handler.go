@@ -148,11 +148,16 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSONError(w, http.StatusBadRequest, "invalid_persistence", "persistence must be session or persistent")
 		return
 	}
+	lockoutKey, err := h.lockoutKey(r, req.Username)
+	if err != nil {
+		writeAuthFailure(w, err)
+		return
+	}
 	tokens, ok, err := h.auth.Login(r.Context(), corerbac.LoginRequest{
 		Username:    req.Username,
 		Password:    req.Password,
 		SessionOnly: sessionOnly,
-		LockoutKey:  h.lockoutKey(r, req.Username),
+		LockoutKey:  lockoutKey,
 	})
 	if err != nil {
 		writeAuthFailure(w, err)
@@ -215,15 +220,14 @@ func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
 	response.WriteJSON(w, http.StatusOK, principalResponse{User: principal})
 }
 
-func (h *Handler) lockoutKey(r *http.Request, username string) string {
+func (h *Handler) lockoutKey(r *http.Request, username string) (string, error) {
 	ip, ok := clientip.FromRequest(r, clientip.Options{
 		TrustedProxies: append([]netip.Prefix(nil), h.options.TrustedProxies...),
 	})
-	ipPart := "unknown"
-	if ok {
-		ipPart = ip.String()
+	if !ok {
+		return "", corerbac.ErrLockoutKeyRequired
 	}
-	return "ip:" + ipPart + "|username:" + strings.TrimSpace(username)
+	return "ip:" + ip.String() + "|username:" + strings.TrimSpace(username), nil
 }
 
 func loginSessionOnly(persistence string) (bool, error) {
