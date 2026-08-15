@@ -17,6 +17,7 @@ go get github.com/Ithildur/EiluneKit@latest
 - `auth` 提供通用 principal 辅助和与传输层无关的认证流程。`auth/http` 将默认 session auth flow 适配到 HTTP；`auth/rbac` 和 `auth/rbac/http` 处理多用户 JSON bearer 认证。
 - `http/routes` 让路由元数据贴着 handler。`Route` 是数据模型；推荐用 `Blueprint` 构建。
 - `http/static` 从项目内相对路径（例如 `dist`、`web/dist`）挂载静态文件和 SPA。
+- `postgres/migration` 使用 Goose 显式执行 Postgres 迁移，并提供 session advisory lock，以及待执行迁移和超前 schema 检查。
 
 ## 使用
 
@@ -56,7 +57,7 @@ if err := authHandler.Register(r); err != nil {
 - `http/routes/README_CN.md`：路由声明、`Blueprint` 和更底层的 `Route`/`Mount`
 - `auth/http/README_CN.md`：面向 `chi` 的单用户 cookie 认证端点和 Bearer 中间件
 - `auth/rbac/http/README_CN.md`：多用户 JSON bearer 认证端点和角色 / scope 中间件
-- `postgres/README_CN.md`：GORM 与 pgx 连接辅助
+- `postgres/README_CN.md`：GORM、pgx 连接辅助和显式 schema 迁移
 - `redis/README_CN.md`：Redis client 构造与 TLS 选项
 
 ## 包布局
@@ -76,6 +77,7 @@ if err := authHandler.Register(r); err != nil {
 - `http/static`：静态文件与 SPA 挂载辅助
 - `postgres/dbtypes`：薄数据库类型别名
 - `postgres/gorm`：Postgres DSN 与 `*gorm.DB` 辅助
+- `postgres/migration`：基于 Goose 的 Postgres 迁移执行与 schema 版本检查
 - `postgres/pgx`：Postgres DSN 与 `*pgxpool.Pool` 辅助
 - `redis`：Redis 客户端辅助
 - `logging`：基于 `slog` 的日志辅助

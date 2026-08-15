@@ -17,6 +17,7 @@ Requires Go 1.25.11 or newer.
 - `auth` owns shared principal helpers and transport-neutral auth flows. `auth/http` adapts the default session auth flow to HTTP; `auth/rbac` and `auth/rbac/http` handle multi-user JSON bearer auth.
 - `http/routes` keeps route metadata next to handlers. `Route` is the data model; `Blueprint` is the recommended builder.
 - `http/static` mounts static files and SPA handlers from project-relative paths such as `dist` or `web/dist`.
+- `postgres/migration` runs explicit Goose-backed Postgres migrations with session advisory locking and startup checks for pending or newer schemas.
 
 ## Usage
 
@@ -56,7 +57,7 @@ Start with the package docs:
 - `http/routes/README.md`: route declarations, `Blueprint`, and lower-level `Route`/`Mount`
 - `auth/http/README.md`: single-user cookie auth endpoints and bearer middleware for `chi`
 - `auth/rbac/http/README.md`: multi-user JSON bearer auth endpoints and role/scope middleware
-- `postgres/README.md`: GORM and pgx connection helpers
+- `postgres/README.md`: GORM and pgx connection helpers, plus explicit schema migrations
 - `redis/README.md`: Redis client setup and TLS option
 
 ## Package Layout
@@ -76,6 +77,7 @@ Start with the package docs:
 - `http/static`: static file and SPA mounting helpers
 - `postgres/dbtypes`: thin database type aliases
 - `postgres/gorm`: Postgres DSN and `*gorm.DB` helpers
+- `postgres/migration`: Goose-backed Postgres migration execution and schema-version checks
 - `postgres/pgx`: Postgres DSN and `*pgxpool.Pool` helpers
 - `redis`: Redis client helpers
 - `logging`: slog-based logging helpers

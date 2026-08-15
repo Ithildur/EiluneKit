@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.7 - 2026-08-16
+
+### Added
+
+- Added `postgres/migration` for explicit Goose-backed PostgreSQL migrations, session advisory locking, application-owned SQL and Go migration sources, and startup checks for pending or newer schemas.
+
+### Fixed
+
+- Fixed session deletion for auth routes mounted below dynamic path parameters.
+
 ## v0.2.6 - 2026-06-19
 
 ### Breaking
