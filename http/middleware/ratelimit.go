@@ -55,10 +55,10 @@ func RateLimit(opts RateLimitOptions) func(http.Handler) http.Handler {
 		}
 	}
 
-	return httprate.Limit(
+	return httprate.LimitBy(
 		effective.Requests,
 		effective.Window,
-		httprate.WithKeyFuncs(effective.KeyFunc),
+		effective.KeyFunc,
 		httprate.WithLimitHandler(effective.OnLimit),
 	)
 }
