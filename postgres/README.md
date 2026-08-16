@@ -34,6 +34,10 @@ fmt.Printf("migrate: total=%d applied=%d skipped=%d\n", result.Total, result.App
 
 Applications that keep Go migrations next to SQL migrations pass migrations built with `goose.NewGoMigration` through `Config.GoMigrations`.
 
+Migration upgrade tests and maintenance tools can apply every available migration through a historical version ceiling with `migration.RunTo(ctx, cfg, target)`. The target must be positive, no older than the database, and no newer than the latest available migration. `RunTo` uses the same advisory lock as `Run`; migrations newer than the target are excluded from `Result.Total` and `Result.Skipped`.
+
+`RunTo` is not a normal production migration entry point. Current application code should use `Run` and start only after `RequireCurrent` succeeds; an intermediate schema may not support the current binary.
+
 Normal startup can reject pending migrations and databases newer than the available sources without applying application migrations. Pass the same SQL and Go migration sources used by the migration command:
 
 ```go
@@ -42,7 +46,7 @@ if err := migration.RequireCurrent(ctx, cfg); err != nil {
 }
 ```
 
-Use `errors.Is` with `migration.ErrSchemaAhead` and `migration.ErrSchemaBehind` when startup needs different diagnostics. Goose may initialize its `goose_db_version` tracking table when either function first inspects a new database. Neither function closes the supplied `*sql.DB`. Database connection helpers never run migrations implicitly.
+Use `errors.Is` with `migration.ErrSchemaAhead`, `migration.ErrSchemaBehind`, and `migration.ErrTargetInvalid` when callers need different diagnostics. Goose may initialize its `goose_db_version` tracking table when these functions first inspect a new database. None of these functions closes the supplied `*sql.DB`. Database connection helpers never run migrations implicitly.
 
 ## Notes
 

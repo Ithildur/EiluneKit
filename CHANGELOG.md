@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.8 - 2026-08-16
+
+### Added
+
+- Added `migration.RunTo` for upgrade tests and maintenance workflows that need to migrate through a historical version ceiling without exposing Goose's provider.
+
 ## v0.2.7 - 2026-08-16
 
 ### Added

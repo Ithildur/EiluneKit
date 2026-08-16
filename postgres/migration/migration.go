@@ -22,11 +22,14 @@ var (
 	// ErrSchemaBehind reports that migrations remain unapplied.
 	// ErrSchemaBehind 表示仍有迁移尚未应用。
 	ErrSchemaBehind = errors.New("database schema migrations are pending")
+	// ErrTargetInvalid reports that a RunTo target is outside the upward migration range.
+	// ErrTargetInvalid 表示 RunTo 的目标超出向上迁移范围。
+	ErrTargetInvalid = errors.New("invalid migration target")
 )
 
-// Config configures Run and RequireCurrent. DB remains owned by the caller.
+// Config configures Run, RunTo, and RequireCurrent. DB remains owned by the caller.
 // A zero LockID uses Goose's default PostgreSQL advisory lock ID.
-// Config 配置 Run 和 RequireCurrent。DB 的生命周期仍由调用方管理。
+// Config 配置 Run、RunTo 和 RequireCurrent。DB 的生命周期仍由调用方管理。
 // LockID 为零时使用 Goose 默认的 PostgreSQL advisory lock ID。
 type Config struct {
 	DB           *sql.DB
@@ -35,8 +38,10 @@ type Config struct {
 	GoMigrations []*goose.Migration
 }
 
-// Result summarizes an upward migration run.
-// Result 汇总一次向上迁移的执行结果。
+// Result summarizes a successful upward migration run.
+// RunTo excludes sources newer than its target from Total and Skipped.
+// Result 汇总一次成功的向上迁移执行结果。
+// RunTo 的 Total 和 Skipped 不包含高于目标版本的迁移源。
 type Result struct {
 	Total   int
 	Applied int
@@ -64,6 +69,43 @@ func Run(ctx context.Context, cfg Config) (Result, error) {
 	results, err := provider.Up(ctx)
 	if err != nil {
 		return Result{Total: total}, fmt.Errorf("run migrations: %w", err)
+	}
+	return Result{
+		Total:   total,
+		Applied: len(results),
+		Skipped: total - len(results),
+	}, nil
+}
+
+// RunTo applies pending migrations through target.
+// The target cannot be older than the database or newer than the available migrations.
+// RunTo is intended for upgrade tests and maintenance, not normal application startup.
+// RunTo 应用截至 target 的待执行迁移。
+// 目标不能低于数据库版本，也不能高于当前可用迁移。
+// RunTo 用于升级测试和维护，不用于正常应用启动。
+func RunTo(ctx context.Context, cfg Config, target int64) (Result, error) {
+	ctx = contextutil.Require(ctx)
+	if target < 1 {
+		return Result{}, fmt.Errorf("%w: target=%d must be greater than zero", ErrTargetInvalid, target)
+	}
+
+	provider, err := newProvider(cfg)
+	if err != nil {
+		return Result{}, err
+	}
+	sources := provider.ListSources()
+	current, available, err := provider.GetVersions(ctx)
+	if err != nil {
+		return Result{}, fmt.Errorf("read schema versions: %w", err)
+	}
+
+	total, err := targetTotal(sources, current, available, target)
+	if err != nil {
+		return Result{}, err
+	}
+	results, err := provider.UpTo(ctx, target)
+	if err != nil {
+		return Result{Total: total}, fmt.Errorf("run migrations to %d: %w", target, err)
 	}
 	return Result{
 		Total:   total,
@@ -128,6 +170,27 @@ func newProvider(cfg Config) (*goose.Provider, error) {
 		return nil, fmt.Errorf("create migration provider: %w", err)
 	}
 	return provider, nil
+}
+
+func targetTotal(sources []*goose.Source, current, available, target int64) (int, error) {
+	if current > available {
+		return 0, versionError(ErrSchemaAhead, current, available)
+	}
+	if target < current {
+		return 0, fmt.Errorf("%w: target=%d database=%d", ErrTargetInvalid, target, current)
+	}
+	if target > available {
+		return 0, fmt.Errorf("%w: target=%d available=%d", ErrTargetInvalid, target, available)
+	}
+
+	total := 0
+	for _, source := range sources {
+		if source.Version > target {
+			break
+		}
+		total++
+	}
+	return total, nil
 }
 
 func versionError(kind error, current, target int64) error {

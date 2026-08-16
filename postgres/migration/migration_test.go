@@ -50,3 +50,47 @@ func TestVersionErrorPreservesKind(t *testing.T) {
 		t.Fatalf("version error does not wrap ErrSchemaAhead: %v", err)
 	}
 }
+
+func TestRunToRejectsNonPositiveTarget(t *testing.T) {
+	_, err := RunTo(context.Background(), Config{}, 0)
+	if !errors.Is(err, ErrTargetInvalid) {
+		t.Fatalf("RunTo error = %v, want ErrTargetInvalid", err)
+	}
+}
+
+func TestTargetTotal(t *testing.T) {
+	tests := []struct {
+		name      string
+		versions  []int64
+		current   int64
+		available int64
+		target    int64
+		want      int
+		wantErr   error
+	}{
+		{name: "current", versions: []int64{9, 10, 11}, current: 9, available: 11, target: 9, want: 1},
+		{name: "historical", versions: []int64{9, 10, 11}, current: 9, available: 11, target: 10, want: 2},
+		{name: "latest", versions: []int64{9, 10, 11}, current: 9, available: 11, target: 11, want: 3},
+		{name: "database ahead", versions: []int64{9, 10, 11}, current: 12, available: 11, target: 11, wantErr: ErrSchemaAhead},
+		{name: "target behind", versions: []int64{9, 10, 11}, current: 10, available: 11, target: 9, wantErr: ErrTargetInvalid},
+		{name: "target ahead", versions: []int64{9, 10, 11}, current: 9, available: 11, target: 12, wantErr: ErrTargetInvalid},
+		{name: "target ceiling", versions: []int64{9, 11}, current: 9, available: 11, target: 10, want: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sources := make([]*goose.Source, 0, len(tt.versions))
+			for _, version := range tt.versions {
+				sources = append(sources, &goose.Source{Version: version})
+			}
+
+			got, err := targetTotal(sources, tt.current, tt.available, tt.target)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("targetTotal error = %v, want %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Fatalf("targetTotal = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
