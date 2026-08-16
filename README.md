@@ -10,7 +10,7 @@ EiluneKit is a small Go toolkit for auth, HTTP services, Postgres, Redis, loggin
 go get github.com/Ithildur/EiluneKit@latest
 ```
 
-Requires Go 1.25.11 or newer.
+Requires Go 1.25.13 or newer.
 
 ## Design
 

@@ -199,6 +199,10 @@ func (s *Store) sessionWithContext(ctx context.Context, sessionID string) (auths
 	if err != nil {
 		return authstore.SessionState{}, false, authstore.ErrStoreUnavailable
 	}
+	return sessionFromHash(values)
+}
+
+func sessionFromHash(values map[string]string) (authstore.SessionState, bool, error) {
 	if len(values) == 0 {
 		return authstore.SessionState{}, false, nil
 	}
@@ -333,10 +337,24 @@ func (s *Store) Sessions(ctx context.Context, userID string) ([]authstore.Sessio
 		return nil, authstore.ErrStoreUnavailable
 	}
 
+	reads := make([]*redis.MapStringStringCmd, len(ids))
+	if _, err := s.client.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		for i, sessionID := range ids {
+			reads[i] = pipe.HGetAll(ctx, s.sessionKey(sessionID))
+		}
+		return nil
+	}); err != nil {
+		return nil, authstore.ErrStoreUnavailable
+	}
+
 	out := make([]authstore.SessionInfo, 0, len(ids))
 	stale := make([]string, 0)
-	for _, sessionID := range ids {
-		state, ok, err := s.sessionWithContext(ctx, sessionID)
+	for i, sessionID := range ids {
+		values, err := reads[i].Result()
+		if err != nil {
+			return nil, authstore.ErrStoreUnavailable
+		}
+		state, ok, err := sessionFromHash(values)
 		if err != nil {
 			return nil, err
 		}

@@ -10,7 +10,7 @@ EiluneKit 是一组小型 Go 工具包，覆盖认证、HTTP 服务、Postgres�
 go get github.com/Ithildur/EiluneKit@latest
 ```
 
-需要 Go 1.25.11 或更高版本。
+需要 Go 1.25.13 或更高版本。
 
 ## 设计
 

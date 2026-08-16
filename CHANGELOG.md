@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.2.9 - 2026-08-17
+
+### Breaking
+
+- Minimum Go version is now Go 1.25.13 to pick up standard-library fixes for GO-2026-5856, GO-2026-5972, GO-2026-6088, and GO-2026-6090.
+- Updated go-redis to v9.22.0. Redis clients that leave `ReadTimeout` or `WriteTimeout` unset now use 5 seconds instead of 3 seconds; the default retry backoff changed from 8ms–512ms to 10ms–1s, and TCP keep-alive now uses a 30-second idle time, a 5-second interval, and 3 probes.
+- `(*redis.Client).WaitAOF` now returns `*redis.IntSliceCmd` instead of `*redis.IntCmd`; callers that name or assume the old result type must update.
+
+### Added
+
+- Documented opt-in go-redis Automatic Pipelining, including its context, retry, and lifecycle constraints.
+
+### Changed
+
+- Redis-backed session listing now reads session hashes in one pipeline instead of issuing one network round trip per session.
+
+### Fixed
+
+- GORM PostgreSQL translated errors now preserve the original PostgreSQL error in the error chain.
+
+### Security
+
+- Updated Goose and its transitive dependencies to incorporate upstream security fixes.
+
 ## v0.2.8 - 2026-08-16
 
 ### Added
