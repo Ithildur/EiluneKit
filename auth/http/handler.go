@@ -107,51 +107,131 @@ func (h *Handler) Routes() []routes.Route {
 		routes.DefaultTags("auth"),
 		routes.DefaultAuth(routes.AuthPublic),
 	)
-	authRoutes.Post(
-		"/login",
-		"Login",
-		routes.Func(h.handleLogin),
+	loginOpts := addErrorResponses([]routes.RouteOption{
+		routes.OperationID("authLogin"),
+		routes.JSONBody(routes.SchemaOf[loginRequest]("AuthLoginRequest"), true),
+		routes.JSONResponse(stdhttp.StatusOK, "Authenticated", routes.SchemaOf[loginResponse]("AuthLoginResponse")),
+	},
+		stdhttp.StatusBadRequest,
+		stdhttp.StatusUnauthorized,
+		stdhttp.StatusRequestEntityTooLarge,
+		stdhttp.StatusUnsupportedMediaType,
+		stdhttp.StatusTooManyRequests,
+		stdhttp.StatusInternalServerError,
+		stdhttp.StatusServiceUnavailable,
+	)
+	loginOpts = append(loginOpts,
 		routes.Use(loginChain...),
 		routes.Use(middleware.RequireJSONBody),
 	)
 	authRoutes.Post(
+		"/login",
+		"Login",
+		routes.Func(h.handleLogin),
+		loginOpts...,
+	)
+	refreshOpts := addErrorResponses([]routes.RouteOption{
+		routes.OperationID("authRefresh"),
+		routes.JSONResponse(stdhttp.StatusOK, "Access token refreshed", routes.SchemaOf[refreshResponse]("AuthRefreshResponse")),
+		routes.Auth(routes.AuthRequired),
+	},
+		stdhttp.StatusUnauthorized,
+		stdhttp.StatusInternalServerError,
+		stdhttp.StatusServiceUnavailable,
+	)
+	refreshOpts = withRefreshSecurity(refreshOpts, opts)
+	refreshOpts = append(refreshOpts, routes.Use(refresh))
+	authRoutes.Post(
 		"/refresh",
 		"Refresh access token",
 		routes.Func(h.handleRefresh),
-		routes.Auth(routes.AuthRequired),
-		routes.Use(refresh),
+		refreshOpts...,
 	)
+	logoutOpts := addErrorResponses([]routes.RouteOption{
+		routes.OperationID("authLogout"),
+		routes.EmptyResponse(stdhttp.StatusNoContent, "Logged out"),
+		routes.Auth(routes.AuthRequired),
+	},
+		stdhttp.StatusUnauthorized,
+		stdhttp.StatusInternalServerError,
+		stdhttp.StatusServiceUnavailable,
+	)
+	logoutOpts = withRefreshSecurity(logoutOpts, opts)
+	logoutOpts = append(logoutOpts, routes.Use(refresh))
 	authRoutes.Post(
 		"/logout",
 		"Logout",
 		routes.Func(h.handleLogout),
-		routes.Auth(routes.AuthRequired),
-		routes.Use(refresh),
+		logoutOpts...,
 	)
 
 	sessions := routes.NewBlueprint(
 		routes.DefaultAuth(routes.AuthRequired),
 		routes.DefaultMiddleware(h.bearer),
 	)
+	listSessionsOpts := withBearerSecurity(addErrorResponses([]routes.RouteOption{
+		routes.OperationID("authListSessions"),
+		routes.JSONResponse(stdhttp.StatusOK, "Sessions", routes.SchemaOf[sessionsResponse]("AuthSessionsResponse")),
+	},
+		stdhttp.StatusUnauthorized,
+		stdhttp.StatusInternalServerError,
+		stdhttp.StatusNotImplemented,
+		stdhttp.StatusServiceUnavailable,
+	))
 	sessions.Get(
 		"/",
 		"List sessions",
 		routes.Func(h.handleListSessions),
+		listSessionsOpts...,
 	)
+	revokeCurrentOpts := withBearerSecurity(addErrorResponses([]routes.RouteOption{
+		routes.OperationID("authRevokeCurrentSession"),
+		routes.EmptyResponse(stdhttp.StatusNoContent, "Current session revoked"),
+	},
+		stdhttp.StatusUnauthorized,
+		stdhttp.StatusInternalServerError,
+		stdhttp.StatusServiceUnavailable,
+	))
 	sessions.Delete(
 		"/current",
 		"Revoke current session",
 		routes.Func(h.handleDeleteCurrentSession),
+		revokeCurrentOpts...,
 	)
+	revokeAllOpts := withBearerSecurity(addErrorResponses([]routes.RouteOption{
+		routes.OperationID("authRevokeAllSessions"),
+		routes.EmptyResponse(stdhttp.StatusNoContent, "Sessions revoked"),
+	},
+		stdhttp.StatusUnauthorized,
+		stdhttp.StatusInternalServerError,
+		stdhttp.StatusServiceUnavailable,
+	))
 	sessions.Delete(
 		"/",
 		"Revoke all sessions for current user",
 		routes.Func(h.handleDeleteAllSessions),
+		revokeAllOpts...,
 	)
+	revokeSessionOpts := withBearerSecurity(addErrorResponses([]routes.RouteOption{
+		routes.OperationID("authRevokeSession"),
+		routes.Parameters(routes.Parameter{
+			Name:     "sid",
+			In:       routes.ParameterPath,
+			Required: true,
+			Schema:   routes.SchemaOf[string](""),
+		}),
+		routes.EmptyResponse(stdhttp.StatusNoContent, "Session revoked"),
+	},
+		stdhttp.StatusBadRequest,
+		stdhttp.StatusUnauthorized,
+		stdhttp.StatusInternalServerError,
+		stdhttp.StatusServiceUnavailable,
+	))
 	sessions.Delete(
 		"/{sid}",
 		"Revoke a specific session for current user",
 		routes.Handler(stdhttp.HandlerFunc(h.handleDeleteSession)),
+		revokeSessionOpts...,
 	)
 	authRoutes.Include("/sessions", sessions)
 

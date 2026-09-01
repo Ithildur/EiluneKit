@@ -15,6 +15,7 @@ import (
 	corerbac "github.com/Ithildur/EiluneKit/auth/rbac"
 	rbachttp "github.com/Ithildur/EiluneKit/auth/rbac/http"
 	authstore "github.com/Ithildur/EiluneKit/auth/store"
+	"github.com/Ithildur/EiluneKit/tools/openapi"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -156,6 +157,13 @@ func TestHandlerLoginRefreshAndMeUseJSONBearerTokens(t *testing.T) {
 	nextRefresh, _ := refreshPayload["refresh_token"].(string)
 	if nextRefresh == "" || nextRefresh == refresh {
 		t.Fatalf("expected rotated refresh token, got %#v", refreshPayload)
+	}
+}
+
+func TestRoutesGenerateOpenAPI(t *testing.T) {
+	handler, _ := newTestHandler(t)
+	if _, err := openapi.Generate(handler.Routes(), openapi.Options{Title: "RBAC API", Version: "1"}); err != nil {
+		t.Fatalf("generate OpenAPI: %v", err)
 	}
 }
 

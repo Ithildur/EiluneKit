@@ -31,24 +31,24 @@ type Handler struct {
 
 type loginRequest struct {
 	Username    string `json:"username"`
-	Password    string `json:"password"`
-	Persistence string `json:"persistence,omitempty"`
+	Password    string `json:"password" jsonschema:"writeOnly=true"`
+	Persistence string `json:"persistence,omitempty" jsonschema:"enum=,enum=persistent,enum=session"`
 }
 
 type refreshRequest struct {
-	RefreshToken string `json:"refresh_token"`
+	RefreshToken string `json:"refresh_token" jsonschema:"writeOnly=true"`
 }
 
 type logoutRequest struct {
-	RefreshToken string `json:"refresh_token"`
+	RefreshToken string `json:"refresh_token" jsonschema:"writeOnly=true"`
 }
 
 type tokenResponse struct {
 	AccessToken      string             `json:"access_token"`
 	RefreshToken     string             `json:"refresh_token"`
-	AccessExpiresAt  string             `json:"access_expires_at"`
-	RefreshExpiresAt string             `json:"refresh_expires_at"`
-	ExpiresAt        string             `json:"expires_at"`
+	AccessExpiresAt  string             `json:"access_expires_at" jsonschema:"format=date-time"`
+	RefreshExpiresAt string             `json:"refresh_expires_at" jsonschema:"format=date-time"`
+	ExpiresAt        string             `json:"expires_at" jsonschema:"format=date-time"`
 	SessionOnly      bool               `json:"session_only"`
 	User             authcore.Principal `json:"user"`
 }
@@ -104,10 +104,42 @@ func (h *Handler) Routes() []routes.Route {
 		routes.DefaultTags("auth"),
 		routes.DefaultAuth(routes.AuthPublic),
 	)
+	loginOpts := addErrorResponses([]routes.RouteOption{
+		routes.OperationID("rbacLogin"),
+		routes.JSONBody(routes.SchemaOf[loginRequest]("RBACLoginRequest"), true),
+		routes.JSONResponse(http.StatusOK, "Authenticated", routes.SchemaOf[tokenResponse]("RBACTokenResponse")),
+	},
+		http.StatusBadRequest,
+		http.StatusUnauthorized,
+		http.StatusRequestEntityTooLarge,
+		http.StatusUnsupportedMediaType,
+		http.StatusTooManyRequests,
+		http.StatusInternalServerError,
+		http.StatusServiceUnavailable,
+	)
+	loginOpts = append(loginOpts,
+		routes.Use(middleware.LimitBody(maxBytes)),
+		routes.Use(middleware.RequireJSONBody),
+	)
 	authRoutes.Post(
 		"/login",
 		"Login",
 		routes.Func(h.handleLogin),
+		loginOpts...,
+	)
+	refreshOpts := addErrorResponses([]routes.RouteOption{
+		routes.OperationID("rbacRefresh"),
+		routes.JSONBody(routes.SchemaOf[refreshRequest]("RBACRefreshRequest"), true),
+		routes.JSONResponse(http.StatusOK, "Access token refreshed", routes.SchemaOf[tokenResponse]("RBACTokenResponse")),
+	},
+		http.StatusBadRequest,
+		http.StatusUnauthorized,
+		http.StatusRequestEntityTooLarge,
+		http.StatusUnsupportedMediaType,
+		http.StatusInternalServerError,
+		http.StatusServiceUnavailable,
+	)
+	refreshOpts = append(refreshOpts,
 		routes.Use(middleware.LimitBody(maxBytes)),
 		routes.Use(middleware.RequireJSONBody),
 	)
@@ -115,6 +147,21 @@ func (h *Handler) Routes() []routes.Route {
 		"/refresh",
 		"Refresh access token",
 		routes.Func(h.handleRefresh),
+		refreshOpts...,
+	)
+	logoutOpts := addErrorResponses([]routes.RouteOption{
+		routes.OperationID("rbacLogout"),
+		routes.JSONBody(routes.SchemaOf[logoutRequest]("RBACLogoutRequest"), true),
+		routes.EmptyResponse(http.StatusNoContent, "Logged out"),
+	},
+		http.StatusBadRequest,
+		http.StatusUnauthorized,
+		http.StatusRequestEntityTooLarge,
+		http.StatusUnsupportedMediaType,
+		http.StatusInternalServerError,
+		http.StatusServiceUnavailable,
+	)
+	logoutOpts = append(logoutOpts,
 		routes.Use(middleware.LimitBody(maxBytes)),
 		routes.Use(middleware.RequireJSONBody),
 	)
@@ -122,15 +169,23 @@ func (h *Handler) Routes() []routes.Route {
 		"/logout",
 		"Logout",
 		routes.Func(h.handleLogout),
-		routes.Use(middleware.LimitBody(maxBytes)),
-		routes.Use(middleware.RequireJSONBody),
+		logoutOpts...,
 	)
+	meOpts := withBearerSecurity(addErrorResponses([]routes.RouteOption{
+		routes.OperationID("rbacCurrentPrincipal"),
+		routes.JSONResponse(http.StatusOK, "Current principal", routes.SchemaOf[principalResponse]("RBACPrincipalResponse")),
+		routes.Auth(routes.AuthRequired),
+	},
+		http.StatusUnauthorized,
+		http.StatusInternalServerError,
+		http.StatusServiceUnavailable,
+	))
+	meOpts = append(meOpts, routes.Use(h.middleware.RequireAuth()))
 	authRoutes.Get(
 		"/me",
 		"Current user",
 		routes.Func(h.handleMe),
-		routes.Auth(routes.AuthRequired),
-		routes.Use(h.middleware.RequireAuth()),
+		meOpts...,
 	)
 
 	root := routes.NewBlueprint()
@@ -269,10 +324,7 @@ func responseFromRefresh(result corerbac.RefreshResult) tokenResponse {
 }
 
 func formatTime(t time.Time) string {
-	if t.IsZero() {
-		return ""
-	}
-	return t.Format(time.RFC3339)
+	return t.UTC().Format(time.RFC3339)
 }
 
 func writeDecodeError(w http.ResponseWriter, err error) {

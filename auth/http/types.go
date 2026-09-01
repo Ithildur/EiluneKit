@@ -44,26 +44,26 @@ type LoginAuthenticator = auth.LoginAuthenticator
 type LoginAuthenticatorFunc = auth.LoginAuthenticatorFunc
 
 type loginRequest struct {
-	Username    string `json:"username"`
-	Password    string `json:"password"`
-	Persistence string `json:"persistence,omitempty"`
+	Username    string `json:"username,omitempty"`
+	Password    string `json:"password" jsonschema:"writeOnly=true"`
+	Persistence string `json:"persistence,omitempty" jsonschema:"required,enum=persistent,enum=session"`
 }
 
 type loginResponse struct {
 	AccessToken string `json:"access_token"`
-	ExpiresAt   string `json:"expires_at"`
+	ExpiresAt   string `json:"expires_at" jsonschema:"format=date-time"`
 	CSRFToken   string `json:"csrf_token"`
 }
 
 type refreshResponse struct {
 	AccessToken string `json:"access_token"`
-	ExpiresAt   string `json:"expires_at"`
+	ExpiresAt   string `json:"expires_at" jsonschema:"format=date-time"`
 	CSRFToken   string `json:"csrf_token"`
 }
 
 type sessionResponse struct {
 	ID          string `json:"id"`
-	ExpiresAt   string `json:"expires_at"`
+	ExpiresAt   string `json:"expires_at" jsonschema:"format=date-time"`
 	SessionOnly bool   `json:"session_only"`
 	Current     bool   `json:"current"`
 }

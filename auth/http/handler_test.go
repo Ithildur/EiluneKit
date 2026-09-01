@@ -20,6 +20,7 @@ import (
 	authsession "github.com/Ithildur/EiluneKit/auth/session"
 	"github.com/Ithildur/EiluneKit/http/response"
 	"github.com/Ithildur/EiluneKit/http/routes"
+	"github.com/Ithildur/EiluneKit/tools/openapi"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
@@ -541,6 +542,15 @@ func TestRoutesExportAuthRequirement(t *testing.T) {
 	}
 	if got, want := authByPath["/auth/sessions/current"], routes.AuthRequired; got != want {
 		t.Fatalf("expected session auth %q, got %q", want, got)
+	}
+}
+
+func TestRoutesGenerateOpenAPI(t *testing.T) {
+	opts := testOptions(stubAuthenticator("admin", "secret", "user-1"))
+	opts.BasePath = "/tenants/{tenantID}/auth"
+	handler := mustNewHandler(t, &stubManager{}, opts)
+	if _, err := openapi.Generate(handler.Routes(), openapi.Options{Title: "Auth API", Version: "1"}); err != nil {
+		t.Fatalf("generate OpenAPI: %v", err)
 	}
 }
 
