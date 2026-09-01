@@ -16,6 +16,7 @@ go get github.com/Ithildur/EiluneKit@latest
 
 - `auth` 提供通用 principal 辅助和与传输层无关的认证流程。`auth/http` 将默认 session auth flow 适配到 HTTP；`auth/rbac` 和 `auth/rbac/http` 处理多用户 JSON bearer 认证。
 - `http/routes` 让路由元数据贴着 handler。`Route` 是数据模型；推荐用 `Blueprint` 构建。
+- `tools/openapi` 可选地把最终路由元数据生成经过校验的 OpenAPI 3.1 JSON。handler 仍是普通 `net/http` handler，不做运行时 schema 校验。
 - `http/static` 从项目内相对路径（例如 `dist`、`web/dist`）挂载静态文件和 SPA。
 - `postgres/migration` 使用 Goose 显式执行 Postgres 迁移，并提供 session advisory lock，以及待执行迁移和超前 schema 检查。
 
@@ -73,7 +74,7 @@ if err := authHandler.Register(r); err != nil {
 - `http/decoder`：JSON 请求解码辅助
 - `http/middleware`：RequireJSONBody、访问日志、限流和 404/405 辅助
 - `http/response`：JSON 响应辅助
-- `http/routes`：声明式路由定义与导出辅助
+- `http/routes`：声明式路由、请求与响应契约和运行时挂载
 - `http/static`：静态文件与 SPA 挂载辅助
 - `postgres/dbtypes`：薄数据库类型别名
 - `postgres/gorm`：Postgres DSN 与 `*gorm.DB` 辅助
@@ -84,6 +85,7 @@ if err := authHandler.Register(r); err != nil {
 - `appdir`：应用 home 目录发现
 - `contextutil`：context 与超时辅助
 - `clientip`：客户端 IP 提取辅助
+- `tools/openapi`：可选的 OpenAPI 3.1 生成与校验
 
 ## 文档
 

@@ -106,6 +106,8 @@ An empty header name defaults to `X-API-Key`.
 
 Default base path: `/auth`.
 
+The table below is a route overview. Generate OpenAPI from `Handler.Routes()` for the request, response, status, parameter, and security contract.
+
 | Route | Auth | Middleware |
 |---|---|---|
 | `POST /auth/login` | `public` | login rate limit, optional login lockout, body limit, JSON body |
@@ -123,6 +125,11 @@ Default base path: `/auth`.
 ```go
 routeList := authHandler.Routes()
 err := routes.Mount(r, "", routeList)
+
+spec, err := openapi.Generate(routeList, openapi.Options{
+	Title:   "Application Auth API",
+	Version: "1.0.0",
+})
 ```
 
 ## Options

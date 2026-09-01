@@ -27,17 +27,42 @@ updater.Post(
 	"/refresh",
 	"Refresh updater state",
 	routes.Func(refresh),
+	routes.OperationID("refreshUpdater"),
+	routes.EmptyResponse(http.StatusNoContent, "Updater refreshed"),
+	routes.Security(routes.SecurityRequirement{
+		{
+			Name:   "BearerAuth",
+			Type:   routes.SecurityHTTP,
+			Scheme: "bearer",
+		},
+	}),
 )
 updater.Get(
 	"/remotes/{remoteID}",
 	"Get remote",
 	routes.Func(remote),
+	routes.OperationID("getRemote"),
+	routes.Parameters(routes.Parameter{
+		Name:     "remoteID",
+		In:       routes.ParameterPath,
+		Required: true,
+		Schema:   routes.SchemaOf[string](""),
+	}),
+	routes.JSONResponse(http.StatusOK, "Remote", routes.SchemaOf[remoteResponse]("Remote")),
+	routes.Security(routes.SecurityRequirement{
+		{
+			Name:   "BearerAuth",
+			Type:   routes.SecurityHTTP,
+			Scheme: "bearer",
+		},
+	}),
 )
 
 api := routes.NewBlueprint()
 api.Include("/updater", updater)
 
-err = api.MountAt(r, "/api")
+routeList := api.RoutesAt("/api")
+err = routes.Mount(r, "", routeList)
 ```
 
 handler 可以在 `*http.Request` 后接收动态 path 值。
@@ -50,7 +75,7 @@ func remote(w http.ResponseWriter, r *http.Request, remoteID string) {
 }
 ```
 
-`Blueprint.Routes()` 返回拥有所有权的 `[]routes.Route` 副本，所以调用方仍然可以通过底层函数导出或挂载。
+`Blueprint.Routes()` 返回拥有所有权的 `[]routes.Route` 副本。路由挂在前缀下时使用 `RoutesAt`，让挂载和契约生成消费同一组最终 path。动态前缀参数会成为必填的 string path 参数；路由已显式声明其元数据时以显式声明为准。
 
 `AuthPublic`、`AuthOptional` 和 `AuthRequired` 会导出为路由元数据。`Mount` 也会在运行时保护 `AuthRequired` 路由，所以认证中间件必须在认证成功后调用 `routes.WithAuthenticated` 标记请求。
 
@@ -59,21 +84,39 @@ func remote(w http.ResponseWriter, r *http.Request, remoteID string) {
 ```go
 routes.Mount(r, "/api", []routes.Route{
 	{
-		Method:     http.MethodGet,
-		Path:       "/status",
-		Summary:    "Get status",
-		Auth:       routes.AuthRequired,
-		Handler:    http.HandlerFunc(status),
-		Middleware: []routes.Middleware{bearer},
+		Method:      http.MethodGet,
+		Path:        "/status",
+		Summary:     "Get status",
+		OperationID: "getStatus",
+		Auth:        routes.AuthPublic,
+		Responses: map[string]routes.Response{
+			"200": {
+				Description: "Status",
+				Content: routes.Content{
+					"application/json": routes.SchemaOf[statusResponse]("Status"),
+				},
+			},
+		},
+		Handler: http.HandlerFunc(status),
 	},
 })
 ```
 
-同一套路由声明需要生成元数据时，使用 `routes.ExportJSON`、`routes.ExportMarkdown` 或 `routes.ExportOpenAPI`。
+## OpenAPI 3.1
+
+可选的 `tools/openapi` 包根据最终路由元数据生成确定且经过校验的 OpenAPI 3.1 JSON：
 
 ```go
-spec, err := routes.ExportOpenAPI(api.Routes(), routes.OpenAPIOptions{
+spec, err := openapi.Generate(routeList, openapi.Options{
 	Title:   "Updater API",
 	Version: "1.0.0",
 })
 ```
+
+每个生成的 operation 必须显式提供全局唯一的 `OperationID` 和至少一个响应。path 参数、请求体、响应体和 security 通过路由 option 声明。具名 `SchemaOf` 会生成稳定的 component，Go JSON 形状定义对应的 wire schema。
+
+生成的 JSON 可交给任意兼容 OpenAPI 3.1 的 TypeScript 类型和 client 生成器；Kit 不内置 TypeScript 生成器。
+
+handler 仍是普通 `net/http` handler。挂载路由不会做运行时 schema 校验；只有调用 `openapi.Generate` 时才生成并校验文档。
+
+`routes.ExportJSON` 和 `routes.ExportMarkdown` 可用于生成精简路由摘要。OpenAPI 输出统一由 `openapi.Generate` 生成。

@@ -106,6 +106,8 @@ header 名为空时默认使用 `X-API-Key`。
 
 默认基础路径：`/auth`。
 
+下表是路由概览。请求、响应、状态码、参数和 security 契约从 `Handler.Routes()` 生成 OpenAPI。
+
 | 路由 | 认证 | 中间件 |
 |---|---|---|
 | `POST /auth/login` | `public` | 登录限流、可选登录锁定、请求体限制、JSON body |
@@ -123,6 +125,11 @@ header 名为空时默认使用 `X-API-Key`。
 ```go
 routeList := authHandler.Routes()
 err := routes.Mount(r, "", routeList)
+
+spec, err := openapi.Generate(routeList, openapi.Options{
+	Title:   "Application Auth API",
+	Version: "1.0.0",
+})
 ```
 
 ## 选项

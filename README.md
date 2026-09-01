@@ -16,6 +16,7 @@ Requires Go 1.25.13 or newer.
 
 - `auth` owns shared principal helpers and transport-neutral auth flows. `auth/http` adapts the default session auth flow to HTTP; `auth/rbac` and `auth/rbac/http` handle multi-user JSON bearer auth.
 - `http/routes` keeps route metadata next to handlers. `Route` is the data model; `Blueprint` is the recommended builder.
+- `tools/openapi` optionally turns final route metadata into validated OpenAPI 3.1 JSON. Handlers remain ordinary `net/http` handlers without runtime schema validation.
 - `http/static` mounts static files and SPA handlers from project-relative paths such as `dist` or `web/dist`.
 - `postgres/migration` runs explicit Goose-backed Postgres migrations with session advisory locking and startup checks for pending or newer schemas.
 
@@ -73,7 +74,7 @@ Start with the package docs:
 - `http/decoder`: JSON request decoding helpers
 - `http/middleware`: JSON-only guards, access logging, rate limits, and 404/405 helpers
 - `http/response`: JSON response helpers
-- `http/routes`: declarative route definitions and export helpers
+- `http/routes`: declarative routes, request and response contracts, and runtime mounting
 - `http/static`: static file and SPA mounting helpers
 - `postgres/dbtypes`: thin database type aliases
 - `postgres/gorm`: Postgres DSN and `*gorm.DB` helpers
@@ -84,6 +85,7 @@ Start with the package docs:
 - `appdir`: application home directory discovery
 - `contextutil`: context and timeout helpers
 - `clientip`: client IP extraction helpers
+- `tools/openapi`: optional OpenAPI 3.1 generation and validation
 
 ## Documentation
 

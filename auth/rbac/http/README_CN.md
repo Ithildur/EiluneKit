@@ -6,6 +6,8 @@
 
 默认路由挂在 `/auth` 下：
 
+下表是路由概览。请求、响应、状态码、参数和 security 契约从 `Handler.Routes()` 生成 OpenAPI。
+
 | 路由 | 用途 |
 |---|---|
 | `POST /auth/login` | 返回 `access_token`、`refresh_token` 和 `user` |
@@ -14,6 +16,18 @@
 | `GET /auth/me` | 返回当前主体 |
 
 `POST /auth/login` 接收 `username`、`password` 和可选的 `persistence`。缺省 `persistence` 表示持久 token；`session` 返回 session-only token 元数据。
+
+挂载与契约生成应使用同一组路由值：
+
+```go
+routeList := authHandler.Routes()
+err := routes.Mount(r, "", routeList)
+
+spec, err := openapi.Generate(routeList, openapi.Options{
+	Title:   "Application RBAC API",
+	Version: "1.0.0",
+})
+```
 
 ## 推荐组合
 

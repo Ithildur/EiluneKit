@@ -6,6 +6,8 @@ Use it for applications that need multiple users, role checks, scope checks, or 
 
 Default routes under `/auth`:
 
+The table below is a route overview. Generate OpenAPI from `Handler.Routes()` for the request, response, status, parameter, and security contract.
+
 | Route | Purpose |
 |---|---|
 | `POST /auth/login` | returns `access_token`, `refresh_token`, and `user` |
@@ -14,6 +16,18 @@ Default routes under `/auth`:
 | `GET /auth/me` | returns the current principal |
 
 `POST /auth/login` accepts `username`, `password`, and optional `persistence`. Missing `persistence` defaults to persistent tokens; `session` returns session-only token metadata.
+
+Mount and generate the contract from the same route values:
+
+```go
+routeList := authHandler.Routes()
+err := routes.Mount(r, "", routeList)
+
+spec, err := openapi.Generate(routeList, openapi.Options{
+	Title:   "Application RBAC API",
+	Version: "1.0.0",
+})
+```
 
 ## Recommended Stack
 
