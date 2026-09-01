@@ -8,7 +8,7 @@ Use `routes.Blueprint` in normal application code. It keeps handlers, metadata, 
 
 Use lower-level `routes.Route` and `routes.Mount` when routes are generated, adapted from another router, or when you need direct control over the route slice. `Blueprint` builds the same route data; it is not a second routing system.
 
-`Blueprint` uses a handler-required registration shape: methods take `path`, `summary`, a required handler built with `routes.Func` or `routes.Handler`, then route options. Prefer `routes.Func(fn)` for handler functions and methods; use `routes.Handler(h)` only when middleware or an adapter already returned an `http.Handler`.
+`Blueprint` methods take `path`, `summary`, a handler function or method value directly, then route options. Go 1.27 generic methods check supported handler signatures at compile time while the stored `Route` remains a plain, non-generic value. Use lower-level `Route.Handler` when an adapter already returned an arbitrary `http.Handler`.
 
 ## Blueprint
 
@@ -26,7 +26,7 @@ updater := routes.NewBlueprint(
 updater.Post(
 	"/refresh",
 	"Refresh updater state",
-	routes.Func(refresh),
+	refresh,
 	routes.OperationID("refreshUpdater"),
 	routes.EmptyResponse(http.StatusNoContent, "Updater refreshed"),
 	routes.Security(routes.SecurityRequirement{
@@ -40,7 +40,7 @@ updater.Post(
 updater.Get(
 	"/remotes/{remoteID}",
 	"Get remote",
-	routes.Func(remote),
+	remote,
 	routes.OperationID("getRemote"),
 	routes.Parameters(routes.Parameter{
 		Name:     "remoteID",
@@ -65,8 +65,7 @@ routeList := api.RoutesAt("/api")
 err = routes.Mount(r, "", routeList)
 ```
 
-Handlers can accept dynamic path values after `*http.Request`.
-`routes.Func` supports up to 10 dynamic path values.
+Handlers can accept up to 10 dynamic path values after `*http.Request`.
 Dynamic path names must be unique in the final mounted route.
 
 ```go

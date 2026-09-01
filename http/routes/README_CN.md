@@ -8,7 +8,7 @@
 
 当路由来自代码生成、需要从其他 router 适配，或需要直接控制 `[]routes.Route` 时，使用更底层的 `routes.Route` 和 `routes.Mount`。`Blueprint` 构建的是同一套路由数据，不是另一套路由系统。
 
-`Blueprint` 使用 handler-required（必填 handler）的注册形状：方法接收 `path`、`summary`、通过 `routes.Func` 或 `routes.Handler` 构造的必填 handler，然后才是路由选项。handler 函数和方法值优先用 `routes.Func(fn)`；只有中间件或适配器已经返回 `http.Handler` 时才用 `routes.Handler(h)`。
+`Blueprint` 方法直接接收 `path`、`summary`、handler 函数或方法值，然后才是路由选项。Go 1.27 泛型方法会在编译期检查支持的 handler 签名，存储的 `Route` 仍是普通的非泛型值。适配器已经返回任意 `http.Handler` 时，使用更底层的 `Route.Handler`。
 
 ## Blueprint
 
@@ -26,7 +26,7 @@ updater := routes.NewBlueprint(
 updater.Post(
 	"/refresh",
 	"Refresh updater state",
-	routes.Func(refresh),
+	refresh,
 	routes.OperationID("refreshUpdater"),
 	routes.EmptyResponse(http.StatusNoContent, "Updater refreshed"),
 	routes.Security(routes.SecurityRequirement{
@@ -40,7 +40,7 @@ updater.Post(
 updater.Get(
 	"/remotes/{remoteID}",
 	"Get remote",
-	routes.Func(remote),
+	remote,
 	routes.OperationID("getRemote"),
 	routes.Parameters(routes.Parameter{
 		Name:     "remoteID",
@@ -65,8 +65,7 @@ routeList := api.RoutesAt("/api")
 err = routes.Mount(r, "", routeList)
 ```
 
-handler 可以在 `*http.Request` 后接收动态 path 值。
-`routes.Func` 最多支持 10 个动态 path 值。
+handler 可以在 `*http.Request` 后接收最多 10 个动态 path 值。
 最终挂载路由里的动态 path 名必须唯一。
 
 ```go

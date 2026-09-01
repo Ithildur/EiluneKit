@@ -85,7 +85,7 @@ optionalBearer, err := authhttp.OptionalBearer(manager)
 if err != nil {
 	return err
 }
-route.Get("/feed", "List feed", routes.Func(feed), routes.Auth(routes.AuthOptional), routes.Use(optionalBearer))
+route.Get("/feed", "List feed", feed, routes.Auth(routes.AuthOptional), routes.Use(optionalBearer))
 ```
 
 ## API Key 中间件
@@ -97,7 +97,7 @@ nodeKey, err := authhttp.RequireAPIKey(authhttp.APIKeyValidatorFunc(func(ctx con
 if err != nil {
 	return err
 }
-route.Get("/node/metrics", "Node metrics", routes.Func(metrics), routes.Auth(routes.AuthRequired), routes.Use(nodeKey))
+route.Get("/node/metrics", "Node metrics", metrics, routes.Auth(routes.AuthRequired), routes.Use(nodeKey))
 ```
 
 header 名为空时默认使用 `X-API-Key`。
