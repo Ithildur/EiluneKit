@@ -25,7 +25,7 @@ func (r *Router) Include(prefix string, routes []Route) {
 	if len(routes) == 0 {
 		return
 	}
-	r.routes = append(r.routes, ownedRoutes(prefix, routes)...)
+	r.routes = append(r.routes, WithPrefix(prefix, routes)...)
 }
 
 // Routes returns a copy of the routes.
@@ -89,23 +89,6 @@ func WithMiddleware(routes []Route, mws ...Middleware) []Route {
 	for i := range out {
 		merged := append([]Middleware(nil), mws...)
 		out[i].Middleware = append(merged, out[i].Middleware...)
-	}
-	return out
-}
-
-func ownedRoutes(prefix string, routes []Route) []Route {
-	if len(routes) == 0 {
-		return nil
-	}
-
-	out := cloneRoutes(routes)
-	p := cleanPrefix(prefix)
-	if p == "" {
-		return out
-	}
-
-	for i := range out {
-		out[i].Path = joinPath(p, out[i].Path)
 	}
 	return out
 }

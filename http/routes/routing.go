@@ -39,13 +39,18 @@ const (
 // Route 定义 HTTP 端点。
 // 使用 Mount 挂载路由。
 type Route struct {
-	Method     string
-	Path       string
-	Summary    string
-	Tags       []string
-	Auth       AuthRequirement
-	Handler    http.Handler
-	Middleware []Middleware
+	Method      string
+	Path        string
+	Summary     string
+	Tags        []string
+	Auth        AuthRequirement
+	Handler     http.Handler
+	Middleware  []Middleware
+	OperationID string
+	Parameters  []Parameter
+	RequestBody *RequestBody
+	Responses   map[string]Response
+	Security    []SecurityRequirement
 }
 
 // Clone returns a copy of r.
@@ -58,6 +63,13 @@ func (r Route) Clone() Route {
 	if r.Middleware != nil {
 		out.Middleware = append([]Middleware(nil), r.Middleware...)
 	}
+	out.Parameters = cloneParameters(r.Parameters)
+	if r.RequestBody != nil {
+		body := r.RequestBody.clone()
+		out.RequestBody = &body
+	}
+	out.Responses = cloneResponses(r.Responses)
+	out.Security = cloneSecurity(r.Security)
 	return out
 }
 
@@ -111,8 +123,12 @@ func mountRoutesAt(r chi.Router, prefix string, routes []Route) error {
 		if err != nil {
 			return fmt.Errorf("routes: route[%d] %s %s: %w", i, method, fullPath, err)
 		}
-		if effectiveAuth(raw.Auth) == AuthRequired {
+		switch auth := effectiveAuth(raw.Auth); auth {
+		case AuthPublic, AuthOptional:
+		case AuthRequired:
 			handler = requireAuthenticated(handler)
+		default:
+			return fmt.Errorf("routes: route[%d] %s %s: unsupported auth requirement %q", i, method, fullPath, auth)
 		}
 
 		for j := len(raw.Middleware) - 1; j >= 0; j-- {
@@ -200,7 +216,11 @@ func sortExportRoutes(exported []exportRoute) {
 }
 
 // WithPrefix returns routes with prefix applied.
+// Dynamic prefix parameters default to required string path parameters.
+// Existing path parameter metadata takes precedence.
 // WithPrefix 返回添加 prefix 后的路由副本。
+// 动态前缀参数默认成为必填的 string path 参数。
+// 已有的 path 参数元数据优先。
 func WithPrefix(prefix string, routes []Route) []Route {
 	if len(routes) == 0 {
 		return nil
@@ -208,18 +228,51 @@ func WithPrefix(prefix string, routes []Route) []Route {
 
 	out := cloneRoutes(routes)
 	p := cleanPrefix(prefix)
-	if p == "" {
-		return out
-	}
-
 	for i := range out {
 		out[i].Path = joinPath(p, out[i].Path)
+		out[i].Parameters = withPrefixParameters(p, out[i].Parameters)
 	}
 	return out
 }
 
+func withPrefixParameters(prefix string, params []Parameter) []Parameter {
+	names := pathParamNames(prefix)
+	if len(names) == 0 {
+		return params
+	}
+
+	declared := make(map[string]struct{}, len(params))
+	for _, param := range params {
+		if param.In == ParameterPath {
+			declared[param.Name] = struct{}{}
+		}
+	}
+
+	inferred := make([]Parameter, 0, len(names))
+	for _, name := range names {
+		if name == "*" {
+			continue
+		}
+		if _, exists := declared[name]; exists {
+			continue
+		}
+		inferred = append(inferred, Parameter{
+			Name:     name,
+			In:       ParameterPath,
+			Required: true,
+			Schema:   SchemaOf[string](""),
+		})
+		declared[name] = struct{}{}
+	}
+	return append(inferred, params...)
+}
+
 func joinPath(prefix, path string) string {
+	path = strings.TrimSpace(path)
 	if path == "" || path == "/" {
+		if prefix == "" {
+			return "/"
+		}
 		return prefix
 	}
 	if !strings.HasPrefix(path, "/") {

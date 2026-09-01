@@ -71,6 +71,30 @@ func TestBlueprintIncludesChildRoutes(t *testing.T) {
 	}
 }
 
+func TestBlueprintRoutesAtNormalizesPathBeforePrefix(t *testing.T) {
+	blueprint := routes.NewBlueprint()
+	blueprint.Add(routes.Route{Path: " users "})
+
+	for _, test := range []struct {
+		prefix string
+		want   string
+	}{
+		{prefix: " /api/ ", want: "/api/users"},
+		{prefix: "/", want: "/users"},
+	} {
+		routeList := blueprint.RoutesAt(test.prefix)
+		if got := routeList[0].Path; got != test.want {
+			t.Fatalf("prefix %q: expected final path %q, got %q", test.prefix, test.want, got)
+		}
+	}
+
+	routeList := blueprint.RoutesAt("/tenants/{tenantID}")
+	params := routeList[0].Parameters
+	if len(params) != 1 || params[0].Name != "tenantID" || params[0].In != routes.ParameterPath || !params[0].Required {
+		t.Fatalf("unexpected dynamic prefix parameters: %#v", params)
+	}
+}
+
 func TestFuncReadsDynamicPath(t *testing.T) {
 	blueprint := routes.NewBlueprint()
 	blueprint.Get(
@@ -264,81 +288,6 @@ func TestFuncRejectsDuplicateDynamicPathNames(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), `duplicate path param "id"`) {
 		t.Fatalf("expected duplicate path param error, got %v", err)
-	}
-}
-
-func TestExportOpenAPI(t *testing.T) {
-	payload, err := routes.ExportOpenAPI([]routes.Route{
-		{
-			Method:  http.MethodGet,
-			Path:    "users/{id}",
-			Summary: "Get user",
-			Tags:    []string{"users"},
-			Auth:    routes.AuthRequired,
-			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
-		},
-		{
-			Method:  http.MethodPost,
-			Path:    "/sessions",
-			Summary: "Create session",
-			Auth:    routes.AuthOptional,
-			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
-		},
-	}, routes.OpenAPIOptions{
-		Title:   "Admin API",
-		Version: "1.2.3",
-	})
-	if err != nil {
-		t.Fatalf("export openapi: %v", err)
-	}
-
-	var doc struct {
-		OpenAPI string `json:"openapi"`
-		Info    struct {
-			Title   string `json:"title"`
-			Version string `json:"version"`
-		} `json:"info"`
-		Paths map[string]map[string]struct {
-			Summary  string                `json:"summary"`
-			Tags     []string              `json:"tags"`
-			Security []map[string][]string `json:"security"`
-		} `json:"paths"`
-		Components struct {
-			SecuritySchemes map[string]struct {
-				Type   string `json:"type"`
-				Scheme string `json:"scheme"`
-			} `json:"securitySchemes"`
-		} `json:"components"`
-	}
-	if err := json.Unmarshal(payload, &doc); err != nil {
-		t.Fatalf("unmarshal openapi: %v", err)
-	}
-	if got, want := doc.OpenAPI, "3.0.3"; got != want {
-		t.Fatalf("expected openapi %q, got %q", want, got)
-	}
-	if got, want := doc.Info.Title, "Admin API"; got != want {
-		t.Fatalf("expected title %q, got %q", want, got)
-	}
-	if got, want := doc.Info.Version, "1.2.3"; got != want {
-		t.Fatalf("expected version %q, got %q", want, got)
-	}
-	getUser := doc.Paths["/users/{id}"]["get"]
-	if got, want := getUser.Summary, "Get user"; got != want {
-		t.Fatalf("expected summary %q, got %q", want, got)
-	}
-	if !reflect.DeepEqual(getUser.Tags, []string{"users"}) {
-		t.Fatalf("expected users tag, got %#v", getUser.Tags)
-	}
-	if got := getUser.Security[0]["BearerAuth"]; got == nil {
-		t.Fatalf("expected BearerAuth security, got %#v", getUser.Security)
-	}
-	createSession := doc.Paths["/sessions"]["post"]
-	if got, want := len(createSession.Security), 2; got != want {
-		t.Fatalf("expected optional auth security alternatives, got %#v", createSession.Security)
-	}
-	scheme := doc.Components.SecuritySchemes["BearerAuth"]
-	if scheme.Type != "http" || scheme.Scheme != "bearer" {
-		t.Fatalf("unexpected bearer security scheme: %#v", scheme)
 	}
 }
 
@@ -554,6 +503,20 @@ func TestMountRejectsDuplicateNormalizedRoutes(t *testing.T) {
 	}
 }
 
+func TestMountRejectsUnknownAuthRequirement(t *testing.T) {
+	err := routes.Mount(chi.NewRouter(), "", []routes.Route{
+		{
+			Method:  http.MethodGet,
+			Path:    "/private",
+			Auth:    routes.AuthRequirement("require"),
+			Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "unsupported auth requirement") {
+		t.Fatalf("expected unsupported auth requirement error, got %v", err)
+	}
+}
+
 func TestExportJSONSortsRoutesAndTags(t *testing.T) {
 	payload, err := routes.ExportJSON([]routes.Route{
 		{
@@ -681,6 +644,44 @@ func TestMountRejectsTypedNilHandler(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected nil handler error")
+	}
+}
+
+func TestRouteCloneOwnsContractMetadata(t *testing.T) {
+	original := routes.Route{
+		Parameters: []routes.Parameter{{Name: "id"}},
+		RequestBody: &routes.RequestBody{
+			Content: routes.Content{"application/json": routes.SchemaOf[string]("Request")},
+		},
+		Responses: map[string]routes.Response{
+			"200": {
+				Content: routes.Content{"application/json": routes.SchemaOf[string]("Response")},
+			},
+		},
+		Security: []routes.SecurityRequirement{
+			{{Name: "BearerAuth"}},
+		},
+	}
+
+	cloned := original.Clone()
+	cloned.Parameters[0].Name = "other"
+	cloned.RequestBody.Content["application/json"] = routes.SchemaOf[int]("OtherRequest")
+	response := cloned.Responses["200"]
+	response.Content["application/json"] = routes.SchemaOf[int]("OtherResponse")
+	cloned.Responses["200"] = response
+	cloned.Security[0][0].Name = "OtherAuth"
+
+	if got := original.Parameters[0].Name; got != "id" {
+		t.Fatalf("parameter aliasing changed original to %q", got)
+	}
+	if got := original.RequestBody.Content["application/json"].Name; got != "Request" {
+		t.Fatalf("request body aliasing changed original to %q", got)
+	}
+	if got := original.Responses["200"].Content["application/json"].Name; got != "Response" {
+		t.Fatalf("response aliasing changed original to %q", got)
+	}
+	if got := original.Security[0][0].Name; got != "BearerAuth" {
+		t.Fatalf("security requirement aliasing changed original to %q", got)
 	}
 }
 

@@ -448,7 +448,7 @@ func (b *Blueprint) Include(prefix string, child *Blueprint, opts ...IncludeOpti
 	if len(cfg.middleware) > 0 {
 		routeList = WithMiddleware(routeList, cfg.middleware...)
 	}
-	b.Add(ownedRoutes(prefix, routeList)...)
+	b.Add(WithPrefix(prefix, routeList)...)
 }
 
 // Routes returns a copy of the routes.
@@ -456,6 +456,17 @@ func (b *Blueprint) Include(prefix string, child *Blueprint, opts ...IncludeOpti
 func (b *Blueprint) Routes() []Route {
 	b = requireBlueprint(b)
 	return cloneRoutes(b.routes)
+}
+
+// RoutesAt returns route copies with prefix applied to their paths.
+// Use the returned routes for both mounting and API contract generation.
+// Dynamic prefix parameters default to required string path parameters.
+// RoutesAt 返回 path 已添加 prefix 的路由副本。
+// 将返回的路由同时用于挂载和 API 契约生成。
+// 动态前缀参数默认成为必填的 string path 参数。
+func (b *Blueprint) RoutesAt(prefix string) []Route {
+	b = requireBlueprint(b)
+	return WithPrefix(prefix, b.routes)
 }
 
 // Mount registers the routes on router.
@@ -483,13 +494,6 @@ func (b *Blueprint) ExportJSON() ([]byte, error) {
 func (b *Blueprint) ExportMarkdown() (string, error) {
 	b = requireBlueprint(b)
 	return ExportMarkdown(b.routes)
-}
-
-// ExportOpenAPI exports route metadata as OpenAPI 3.0 JSON.
-// ExportOpenAPI 将路由元数据导出为 OpenAPI 3.0 JSON。
-func (b *Blueprint) ExportOpenAPI(opts OpenAPIOptions) ([]byte, error) {
-	b = requireBlueprint(b)
-	return ExportOpenAPI(b.routes, opts)
 }
 
 func requireBlueprint(b *Blueprint) *Blueprint {
