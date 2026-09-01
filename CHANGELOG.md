@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.3.0 - 2026-09-01
+
+### Breaking
+
+- Minimum Go version is now Go 1.27.0.
+- `Blueprint.Get`, `Post`, `Put`, `Patch`, `Delete`, and `Handle` now accept handler functions directly through Go 1.27 generic methods constrained by `routes.HandlerFunc`. Replace `routes.Func(fn)` with `fn`; arbitrary `http.Handler` values must be added through a lower-level `routes.Route`. The `routes.Func` and `routes.Handler` adapters were removed.
+- HTTP JSON handling now uses `encoding/json/v2`. Struct field matching is case-sensitive; nil slices and maps encode as `[]` and `{}`; `response.WriteJSON` does not append a newline or escape HTML characters by default; and map key order is unspecified.
+- `routes.Route` now includes operation, parameter, body, response, and security metadata. Callers using positional composite literals must switch to keyed fields.
+- Replaced `routes.ExportOpenAPI`, `routes.OpenAPIOptions`, and `Blueprint.ExportOpenAPI` with `tools/openapi.Generate`.
+
+### Added
+
+- Added explicit route contracts for operation IDs, parameters, request bodies, status-specific responses, JSON schemas, and security schemes.
+- Added optional `tools/openapi.Generate` output for validated OpenAPI 3.1 JSON, including chi path-parameter normalization and deterministic components.
+- Added `Blueprint.RoutesAt` so mounting and OpenAPI generation can consume the same final prefixed route set.
+- Added complete generated contracts for the built-in `auth/http` and `auth/rbac/http` routes.
+
+### Changed
+
+- Chi route regular expressions are normalized out of OpenAPI paths and are not inferred as JSON Schema `pattern` constraints. Parameter constraints must be declared explicitly in route contract schemas.
+- `routes.WithPrefix` now normalizes route paths and adds dynamic prefix parameters as required string path metadata unless they are declared explicitly.
+
+### Security
+
+- JSON request decoding now rejects duplicate object names and invalid UTF-8 by default.
+- `routes.Mount` now rejects unsupported non-empty authentication requirements instead of mounting them without an authentication guard.
+
 ## v0.2.9 - 2026-08-17
 
 ### Breaking
