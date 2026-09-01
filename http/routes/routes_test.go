@@ -1,7 +1,7 @@
 package routes_test
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -18,9 +18,9 @@ func TestBlueprintIncludesChildRoutes(t *testing.T) {
 	child.Get(
 		"/status",
 		"Get status",
-		routes.Func(func(w http.ResponseWriter, r *http.Request) {
+		func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
-		}),
+		},
 		routes.Tags("child"),
 		routes.Auth(routes.AuthOptional),
 	)
@@ -95,17 +95,17 @@ func TestBlueprintRoutesAtNormalizesPathBeforePrefix(t *testing.T) {
 	}
 }
 
-func TestFuncReadsDynamicPath(t *testing.T) {
+func TestBlueprintHandlerReadsDynamicPath(t *testing.T) {
 	blueprint := routes.NewBlueprint()
 	blueprint.Get(
 		"/remotes/{remoteID}",
 		"Get remote",
-		routes.Func(func(w http.ResponseWriter, r *http.Request, remoteID string) {
+		func(w http.ResponseWriter, r *http.Request, remoteID string) {
 			if got, want := remoteID, "origin"; got != want {
 				t.Fatalf("expected remoteID %q, got %q", want, got)
 			}
 			w.WriteHeader(http.StatusNoContent)
-		}),
+		},
 	)
 
 	r := chi.NewRouter()
@@ -121,17 +121,17 @@ func TestFuncReadsDynamicPath(t *testing.T) {
 	}
 }
 
-func TestFuncReadsRegexpDynamicPath(t *testing.T) {
+func TestBlueprintHandlerReadsRegexpDynamicPath(t *testing.T) {
 	blueprint := routes.NewBlueprint()
 	blueprint.Get(
 		"/remotes/{remoteID:[a-z]{2}[0-9]{3}}",
 		"Get remote",
-		routes.Func(func(w http.ResponseWriter, r *http.Request, remoteID string) {
+		func(w http.ResponseWriter, r *http.Request, remoteID string) {
 			if got, want := remoteID, "ab123"; got != want {
 				t.Fatalf("expected remoteID %q, got %q", want, got)
 			}
 			w.WriteHeader(http.StatusNoContent)
-		}),
+		},
 	)
 
 	r := chi.NewRouter()
@@ -147,17 +147,17 @@ func TestFuncReadsRegexpDynamicPath(t *testing.T) {
 	}
 }
 
-func TestFuncReadsSimpleRegexpDynamicPath(t *testing.T) {
+func TestBlueprintHandlerReadsSimpleRegexpDynamicPath(t *testing.T) {
 	blueprint := routes.NewBlueprint()
 	blueprint.Get(
 		"/users/{id:[0-9]+}",
 		"Get user",
-		routes.Func(func(w http.ResponseWriter, r *http.Request, id string) {
+		func(w http.ResponseWriter, r *http.Request, id string) {
 			if got, want := id, "42"; got != want {
 				t.Fatalf("expected id %q, got %q", want, got)
 			}
 			w.WriteHeader(http.StatusNoContent)
-		}),
+		},
 	)
 
 	r := chi.NewRouter()
@@ -173,17 +173,17 @@ func TestFuncReadsSimpleRegexpDynamicPath(t *testing.T) {
 	}
 }
 
-func TestFuncReadsWildcardDynamicPath(t *testing.T) {
+func TestBlueprintHandlerReadsWildcardDynamicPath(t *testing.T) {
 	blueprint := routes.NewBlueprint()
 	blueprint.Get(
 		"/files/*",
 		"Get file",
-		routes.Func(func(w http.ResponseWriter, r *http.Request, path string) {
+		func(w http.ResponseWriter, r *http.Request, path string) {
 			if got, want := path, "a/b/c.txt"; got != want {
 				t.Fatalf("expected path %q, got %q", want, got)
 			}
 			w.WriteHeader(http.StatusNoContent)
-		}),
+		},
 	)
 
 	r := chi.NewRouter()
@@ -199,12 +199,12 @@ func TestFuncReadsWildcardDynamicPath(t *testing.T) {
 	}
 }
 
-func TestFuncReadsPrefixedDynamicPath(t *testing.T) {
+func TestBlueprintHandlerReadsPrefixedDynamicPath(t *testing.T) {
 	blueprint := routes.NewBlueprint()
 	blueprint.Get(
 		"/remotes/{remoteID}",
 		"Get remote",
-		routes.Func(func(w http.ResponseWriter, r *http.Request, tenantID, remoteID string) {
+		func(w http.ResponseWriter, r *http.Request, tenantID, remoteID string) {
 			if got, want := tenantID, "acme"; got != want {
 				t.Fatalf("expected tenantID %q, got %q", want, got)
 			}
@@ -212,7 +212,7 @@ func TestFuncReadsPrefixedDynamicPath(t *testing.T) {
 				t.Fatalf("expected remoteID %q, got %q", want, got)
 			}
 			w.WriteHeader(http.StatusNoContent)
-		}),
+		},
 	)
 
 	r := chi.NewRouter()
@@ -228,12 +228,12 @@ func TestFuncReadsPrefixedDynamicPath(t *testing.T) {
 	}
 }
 
-func TestFuncReadsTenDynamicPathParams(t *testing.T) {
+func TestBlueprintHandlerReadsTenDynamicPathParams(t *testing.T) {
 	blueprint := routes.NewBlueprint()
 	blueprint.Get(
 		"/{a}/{b}/{c}/{d}/{e}/{f}/{g}/{h}/{i}/{j}",
 		"Get nested resource",
-		routes.Func(func(
+		func(
 			w http.ResponseWriter,
 			r *http.Request,
 			a, b, c, d, e, f, g, h, i, j string,
@@ -244,7 +244,7 @@ func TestFuncReadsTenDynamicPathParams(t *testing.T) {
 				t.Fatalf("expected path params %#v, got %#v", want, got)
 			}
 			w.WriteHeader(http.StatusNoContent)
-		}),
+		},
 	)
 
 	r := chi.NewRouter()
@@ -260,12 +260,12 @@ func TestFuncReadsTenDynamicPathParams(t *testing.T) {
 	}
 }
 
-func TestFuncRejectsMismatchedDynamicPath(t *testing.T) {
+func TestBlueprintHandlerRejectsMismatchedDynamicPath(t *testing.T) {
 	blueprint := routes.NewBlueprint()
 	blueprint.Get(
 		"/remotes/{remoteID}",
 		"Get remote",
-		routes.Func(func(w http.ResponseWriter, r *http.Request, tenantID, remoteID string) {}),
+		func(w http.ResponseWriter, r *http.Request, tenantID, remoteID string) {},
 	)
 
 	err := blueprint.Mount(chi.NewRouter())
@@ -274,12 +274,12 @@ func TestFuncRejectsMismatchedDynamicPath(t *testing.T) {
 	}
 }
 
-func TestFuncRejectsDuplicateDynamicPathNames(t *testing.T) {
+func TestBlueprintHandlerRejectsDuplicateDynamicPathNames(t *testing.T) {
 	blueprint := routes.NewBlueprint()
 	blueprint.Get(
 		"/remotes/{id}",
 		"Get remote",
-		routes.Func(func(w http.ResponseWriter, r *http.Request, tenantID, remoteID string) {}),
+		func(w http.ResponseWriter, r *http.Request, tenantID, remoteID string) {},
 	)
 
 	err := blueprint.MountAt(chi.NewRouter(), "/tenants/{id}")
@@ -314,19 +314,19 @@ func TestBlueprintDefaults(t *testing.T) {
 	blueprint.Get(
 		"/users",
 		"List users",
-		routes.Func(func(w http.ResponseWriter, r *http.Request) {
+		func(w http.ResponseWriter, r *http.Request) {
 			calls = append(calls, "handler")
 			w.WriteHeader(http.StatusNoContent)
-		}),
+		},
 		routes.Tags("users"),
 		routes.Use(routeMW),
 	)
 	blueprint.Get(
 		"/public",
 		"",
-		routes.Func(func(w http.ResponseWriter, r *http.Request) {
+		func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
-		}),
+		},
 		routes.Auth(routes.AuthPublic),
 	)
 
@@ -376,10 +376,10 @@ func TestBlueprintIncludeMiddlewarePrependsChildRoutes(t *testing.T) {
 	}
 
 	child := routes.NewBlueprint()
-	child.Get("/public", "", routes.Func(func(w http.ResponseWriter, r *http.Request) {
+	child.Get("/public", "", func(w http.ResponseWriter, r *http.Request) {
 		calls = append(calls, "handler")
 		w.WriteHeader(http.StatusNoContent)
-	}), routes.Use(routeMW))
+	}, routes.Use(routeMW))
 
 	parent := routes.NewBlueprint()
 	parent.Include("/child", child, routes.IncludeMiddleware(includeMW))
@@ -410,7 +410,7 @@ func TestBlueprintIncludeMiddlewarePrependsChildRoutes(t *testing.T) {
 
 func TestBlueprintIncludeAuthOverridesChildRoutes(t *testing.T) {
 	child := routes.NewBlueprint()
-	child.Get("/public", "", routes.Func(func(w http.ResponseWriter, r *http.Request) {}), routes.Auth(routes.AuthPublic))
+	child.Get("/public", "", func(w http.ResponseWriter, r *http.Request) {}, routes.Auth(routes.AuthPublic))
 
 	parent := routes.NewBlueprint()
 	parent.Include("/child", child, routes.IncludeAuth(routes.AuthRequired))
@@ -611,24 +611,16 @@ func TestMountRejectsNilChiRouter(t *testing.T) {
 	}
 }
 
-func TestHandlerRejectsNilHandlers(t *testing.T) {
-	mustPanic(t, func() {
-		routes.Handler(nil)
-	})
-
+func TestBlueprintRejectsNilHandlerFunctions(t *testing.T) {
+	b := routes.NewBlueprint()
 	var fn func(http.ResponseWriter, *http.Request)
 	mustPanic(t, func() {
-		routes.Func(fn)
+		b.Get("/", "", fn)
 	})
 
 	var paramFn func(http.ResponseWriter, *http.Request, string)
 	mustPanic(t, func() {
-		routes.Func(paramFn)
-	})
-
-	var h *typedNilHandler
-	mustPanic(t, func() {
-		routes.Handler(h)
+		b.Get("/{id}", "", paramFn)
 	})
 }
 

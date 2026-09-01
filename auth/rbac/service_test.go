@@ -169,9 +169,11 @@ func TestLoginLockoutClearedAfterSuccess(t *testing.T) {
 	})
 	service := newTestService(t, users, rbac.ServiceOptions{Lockout: lockout})
 	ctx := context.Background()
-	req := rbac.LoginRequest{Username: "alice", LockoutKey: "ip:127.0.0.1|username:alice"}
-
-	req.Password = "wrong"
+	req := rbac.LoginRequest{
+		Username:   "alice",
+		Password:   "wrong",
+		LockoutKey: "ip:127.0.0.1|username:alice",
+	}
 	if _, ok, err := service.Login(ctx, req); err != nil || ok {
 		t.Fatalf("expected first bad password to be rejected without error, ok=%v err=%v", ok, err)
 	}

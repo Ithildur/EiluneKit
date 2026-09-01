@@ -124,7 +124,7 @@ func (h *Handler) Routes() []routes.Route {
 	authRoutes.Post(
 		"/login",
 		"Login",
-		routes.Func(h.handleLogin),
+		h.handleLogin,
 		loginOpts...,
 	)
 	refreshOpts := addErrorResponses([]routes.RouteOption{
@@ -146,7 +146,7 @@ func (h *Handler) Routes() []routes.Route {
 	authRoutes.Post(
 		"/refresh",
 		"Refresh access token",
-		routes.Func(h.handleRefresh),
+		h.handleRefresh,
 		refreshOpts...,
 	)
 	logoutOpts := addErrorResponses([]routes.RouteOption{
@@ -168,7 +168,7 @@ func (h *Handler) Routes() []routes.Route {
 	authRoutes.Post(
 		"/logout",
 		"Logout",
-		routes.Func(h.handleLogout),
+		h.handleLogout,
 		logoutOpts...,
 	)
 	meOpts := withBearerSecurity(addErrorResponses([]routes.RouteOption{
@@ -184,7 +184,7 @@ func (h *Handler) Routes() []routes.Route {
 	authRoutes.Get(
 		"/me",
 		"Current user",
-		routes.Func(h.handleMe),
+		h.handleMe,
 		meOpts...,
 	)
 

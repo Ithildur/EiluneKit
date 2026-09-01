@@ -15,7 +15,7 @@ import (
 // 对会解码 JSON 的路由使用 routes.Use(RequireJSONBody)。
 // Example / 示例:
 //
-//	r.Post("/login", "Login", routes.Func(loginHandler), routes.Use(middleware.RequireJSONBody))
+//	r.Post("/login", "Login", loginHandler, routes.Use(middleware.RequireJSONBody))
 func RequireJSONBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Body != nil && r.Body != http.NoBody {

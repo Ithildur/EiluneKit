@@ -61,12 +61,10 @@ func TestMemoryStoreRotateRefreshConcurrentSingleSuccess(t *testing.T) {
 	const workers = 32
 	start := make(chan struct{})
 	var wg sync.WaitGroup
-	var successCount int32
+	var successCount atomic.Int32
 
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
+	for i := range workers {
+		wg.Go(func() {
 			<-start
 			rotated, err := s.RotateRefresh(ctx, "sid-1", "user-1", 0, "old-refresh", "new-refresh", exp)
 			if err != nil {
@@ -74,15 +72,15 @@ func TestMemoryStoreRotateRefreshConcurrentSingleSuccess(t *testing.T) {
 				return
 			}
 			if rotated {
-				atomic.AddInt32(&successCount, 1)
+				successCount.Add(1)
 			}
-		}(i)
+		})
 	}
 
 	close(start)
 	wg.Wait()
 
-	if got := atomic.LoadInt32(&successCount); got != 1 {
+	if got := successCount.Load(); got != 1 {
 		t.Fatalf("expected exactly 1 successful refresh rotation, got %d", got)
 	}
 }

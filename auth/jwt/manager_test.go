@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -33,34 +32,32 @@ func TestRotateRefreshTokensMemoryStoreSingleSuccess(t *testing.T) {
 	results := make(chan result, workers)
 	var wg sync.WaitGroup
 
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range workers {
+		wg.Go(func() {
 			<-start
 			rotated, ok, err := mgr.RotateRefreshTokens(context.Background(), oldRefresh)
 			results <- result{refresh: rotated.Refresh, ok: ok, err: err}
-		}()
+		})
 	}
 
 	close(start)
 	wg.Wait()
 	close(results)
 
-	var successCount int32
+	var successCount int
 	var successfulRefresh string
 	for res := range results {
 		if res.err != nil {
 			t.Fatalf("rotate refresh returned error: %v", res.err)
 		}
 		if res.ok {
-			atomic.AddInt32(&successCount, 1)
+			successCount++
 			successfulRefresh = res.refresh
 		}
 	}
 
-	if got := atomic.LoadInt32(&successCount); got != 1 {
-		t.Fatalf("expected exactly 1 successful refresh rotation, got %d", got)
+	if successCount != 1 {
+		t.Fatalf("expected exactly 1 successful refresh rotation, got %d", successCount)
 	}
 
 	claims, ok, err := mgr.ValidateRefreshToken(context.Background(), successfulRefresh)

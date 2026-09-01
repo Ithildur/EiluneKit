@@ -72,7 +72,6 @@ type Options struct {
 // DefaultOptions returns the default handler options.
 // DefaultOptions 返回默认 handler 选项。
 func DefaultOptions() Options {
-	rate := DefaultRateLimitOptions()
 	return Options{
 		BasePath:          defaultAuthBasePath,
 		RefreshCookiePath: "",
@@ -81,7 +80,7 @@ func DefaultOptions() Options {
 		CSRFCookieName:    authsession.DefaultCSRFCookieName,
 		CSRFHeaderName:    authsession.DefaultCSRFHeaderName,
 		MaxBodyBytes:      defaultMaxBodyBytes,
-		RateLimit:         &rate,
+		RateLimit:         new(DefaultRateLimitOptions()),
 	}
 }
 
@@ -145,8 +144,7 @@ func mergeRateLimitOptions(base *RateLimitOptions, override *RateLimitOptions) *
 		return base
 	}
 	if base == nil {
-		def := DefaultRateLimitOptions()
-		base = &def
+		base = new(DefaultRateLimitOptions())
 	}
 	merged := *base
 	merged.Disabled = override.Disabled

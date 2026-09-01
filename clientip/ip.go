@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strings"
 )
 
@@ -70,8 +71,7 @@ func fromTrustedRequest(r *http.Request, trusted []netip.Prefix) (netip.Addr, bo
 		return remote, true
 	}
 
-	for i := len(candidates) - 1; i >= 0; i-- {
-		ip := candidates[i]
+	for _, ip := range slices.Backward(candidates) {
 		if !isTrustedIP(ip, trusted) {
 			return ip, true
 		}
@@ -113,8 +113,7 @@ func parseForwardedForList(raw string) []netip.Addr {
 		if part == "" {
 			continue
 		}
-		params := strings.Split(part, ";")
-		for _, param := range params {
+		for param := range strings.SplitSeq(part, ";") {
 			param = strings.TrimSpace(param)
 			if len(param) < 4 {
 				continue

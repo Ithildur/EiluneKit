@@ -23,6 +23,11 @@ func TestDecodeJSONBodyErrorContract(t *testing.T) {
 			wantErr: ErrInvalidJSON,
 		},
 		{
+			name:    "duplicate_name",
+			body:    `{"name":"kit","name":"other"}`,
+			wantErr: ErrInvalidJSON,
+		},
+		{
 			name:    "too_large",
 			body:    `{"name":"kit"}`,
 			limit:   4,

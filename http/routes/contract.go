@@ -130,8 +130,7 @@ func Parameters(params ...Parameter) RouteOption {
 // Body 设置请求体。
 func Body(body RequestBody) RouteOption {
 	return func(r *Route) {
-		cloned := body.clone()
-		r.RequestBody = &cloned
+		r.RequestBody = new(body.clone())
 	}
 }
 

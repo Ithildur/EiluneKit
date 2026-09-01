@@ -46,7 +46,7 @@ type logWriter struct {
 	level  slog.Level
 }
 
-func (w logWriter) Printf(format string, args ...interface{}) {
+func (w logWriter) Printf(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	w.logger.Log(context.Background(), w.level, msg)
 }

@@ -2,7 +2,8 @@ package openapi
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"maps"
 	"mime"
@@ -57,7 +58,7 @@ func Generate(routeList []routes.Route, opts Options) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	payload, err := json.MarshalIndent(doc, "", "  ")
+	payload, err := json.Marshal(doc, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		return nil, fmt.Errorf("openapi: encode document: %w", err)
 	}
@@ -552,7 +553,7 @@ func (b *builder) collectSchemaNames() error {
 				return routeError(i, route, fmt.Errorf("schema component %q refers to both %s and %s", schema.Name, existing, typeOf))
 			}
 			if existing, ok := b.componentNames[typeOf]; ok && existing != schema.Name {
-				return routeError(i, route, fmt.Errorf("Go type %s uses both schema names %q and %q", typeOf, existing, schema.Name))
+				return routeError(i, route, fmt.Errorf("type %s uses both schema names %q and %q", typeOf, existing, schema.Name))
 			}
 			b.componentTypes[schema.Name] = typeOf
 			b.componentNames[typeOf] = schema.Name
@@ -647,7 +648,7 @@ func (b *builder) schema(ref routes.SchemaRef) (*openapi3.SchemaRef, error) {
 func (b *builder) reflectSchema(typeOf reflect.Type) (schema *jsonschema.Schema, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("reflect Go type %s: %v", typeOf, recovered)
+			err = fmt.Errorf("reflect type %s: %v", typeOf, recovered)
 		}
 	}()
 	return b.reflector.ReflectFromType(typeOf), nil
@@ -657,7 +658,7 @@ func (b *builder) addSchemaComponent(name string, schema *openapi3.SchemaRef) er
 	if err := openapi3.ValidateIdentifier(name); err != nil {
 		return fmt.Errorf("invalid generated schema component name %q: %w", name, err)
 	}
-	data, err := json.Marshal(schema)
+	data, err := json.Marshal(schema, json.Deterministic(true))
 	if err != nil {
 		return fmt.Errorf("encode schema component %q: %w", name, err)
 	}

@@ -3,7 +3,7 @@
 //
 // Usage (Double-submit CSRF) / 用法（双提交 CSRF）:
 //
-//	csrf := uuid.NewString()
+//	csrf := uuid.New().String()
 //	SetCSRFCookie(w, csrf, exp, CookieConfig{Name: DefaultCSRFCookieName, Path: "/"})
 //	// Client sends header: X-CSRF-Token: <csrf>
 //	ok := ValidateDoubleSubmit(r, DefaultCSRFCookieName, DefaultCSRFHeaderName)
@@ -156,12 +156,8 @@ func setCookie(w http.ResponseWriter, token string, exp time.Time, cfg CookieCon
 		HttpOnly: httpOnly,
 	}
 	if !cfg.SessionOnly {
-		maxAge := int(time.Until(exp).Seconds())
-		if maxAge < 0 {
-			maxAge = 0
-		}
 		c.Expires = exp
-		c.MaxAge = maxAge
+		c.MaxAge = max(int(time.Until(exp).Seconds()), 0)
 	}
 	http.SetCookie(w, &c)
 }

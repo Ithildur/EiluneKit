@@ -9,11 +9,10 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"uuid"
 
 	authcore "github.com/Ithildur/EiluneKit/auth"
 	"github.com/Ithildur/EiluneKit/contextutil"
-
-	"github.com/google/uuid"
 )
 
 const (
@@ -97,18 +96,14 @@ func createRawAPIToken() (string, string, string, error) {
 		return "", "", "", fmt.Errorf("generate api token: %w", err)
 	}
 	raw := apiTokenSecretPrefix + base64.RawURLEncoding.EncodeToString(buf)
-	prefixLen := defaultAPITokenPrefix
-	if len(raw) < prefixLen {
-		prefixLen = len(raw)
-	}
-	prefix := raw[:prefixLen]
+	prefix := raw[:defaultAPITokenPrefix]
 	return raw, prefix, HashToken(raw), nil
 }
 
 func normalizeAPITokenForStore(req CreateAPITokenRequest, raw, prefix, hash string, now time.Time) (APIToken, error) {
 	id := strings.TrimSpace(req.ID)
 	if id == "" {
-		id = uuid.NewString()
+		id = uuid.New().String()
 	}
 	createdBy := strings.TrimSpace(req.CreatedBy)
 	if createdBy == "" {

@@ -3,9 +3,10 @@
 package routes
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 
@@ -65,8 +66,7 @@ func (r Route) Clone() Route {
 	}
 	out.Parameters = cloneParameters(r.Parameters)
 	if r.RequestBody != nil {
-		body := r.RequestBody.clone()
-		out.RequestBody = &body
+		out.RequestBody = new(r.RequestBody.clone())
 	}
 	out.Responses = cloneResponses(r.Responses)
 	out.Security = cloneSecurity(r.Security)
@@ -131,9 +131,9 @@ func mountRoutesAt(r chi.Router, prefix string, routes []Route) error {
 			return fmt.Errorf("routes: route[%d] %s %s: unsupported auth requirement %q", i, method, fullPath, auth)
 		}
 
-		for j := len(raw.Middleware) - 1; j >= 0; j-- {
-			if raw.Middleware[j] != nil {
-				handler = raw.Middleware[j](handler)
+		for _, middleware := range slices.Backward(raw.Middleware) {
+			if middleware != nil {
+				handler = middleware(handler)
 			}
 		}
 

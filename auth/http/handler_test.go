@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -937,7 +937,7 @@ func TestLoginRateLimit(t *testing.T) {
 			},
 			run: func(t *testing.T, r http.Handler) {
 				var lastCode int
-				for i := 0; i < 6; i++ {
+				for range 6 {
 					rec := serve(r, http.MethodPost, "/auth/login", `{"username":"admin","password":"secret","persistence":"persistent"}`, func(req *http.Request) {
 						req.Header.Set("Content-Type", "application/json")
 						req.Header.Set("X-Forwarded-For", "198.51.100.10, 198.51.100.11")

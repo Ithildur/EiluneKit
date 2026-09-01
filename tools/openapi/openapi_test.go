@@ -2,7 +2,7 @@ package openapi_test
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"slices"
 	"strings"
@@ -28,7 +28,7 @@ func TestGenerateOpenAPI31Contract(t *testing.T) {
 	api.Put(
 		"/widgets/{widgetID:[0-9]+}",
 		"Update a widget",
-		routes.Func(func(http.ResponseWriter, *http.Request, string) {}),
+		func(http.ResponseWriter, *http.Request, string) {},
 		routes.OperationID("updateWidget"),
 		routes.Parameters(
 			routes.Parameter{

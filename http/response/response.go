@@ -3,8 +3,7 @@
 package response
 
 import (
-	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 )
 
@@ -25,15 +24,14 @@ type ErrorResponse struct {
 //	response.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 func WriteJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	if err := enc.Encode(v); err != nil {
+	payload, err := json.Marshal(v)
+	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"code":"internal_error","message":"internal server error"}`))
 		return
 	}
 	w.WriteHeader(status)
-	_, _ = w.Write(buf.Bytes())
+	_, _ = w.Write(payload)
 }
 
 // WriteJSONError writes ErrorResponse as JSON.

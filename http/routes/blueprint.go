@@ -65,10 +65,6 @@ func DefaultMiddleware(mw ...Middleware) BlueprintOption {
 // RouteOption 在路由加入前修改路由。
 type RouteOption func(*Route)
 
-type handlerSpec struct {
-	handler http.Handler
-}
-
 // Tags appends Route.Tags.
 // Tags 追加 Route.Tags。
 func Tags(tags ...string) RouteOption {
@@ -95,31 +91,11 @@ func Use(mw ...Middleware) RouteOption {
 	}
 }
 
-// Handler builds the required Blueprint handler from an existing http.Handler.
-// Prefer Func for handler functions and methods.
-// Panics if h is nil, including typed-nil handlers.
-// Handler 使用现成的 http.Handler 构造 Blueprint 必填 handler。
-// handler 函数或方法值优先用 Func。
-// h 为 nil 时会 panic，包括 typed-nil handler。
-func Handler(h http.Handler) handlerSpec {
-	return handlerSpec{handler: mustHandler(h)}
-}
-
-// Func builds the required Blueprint handler from a function.
-// Dynamic path values are passed to extra string arguments in route path order.
-// Mount and include prefixes are part of that order.
-// Func supports up to 10 dynamic path values.
-// Panics if fn is nil.
-// Func 使用函数构造 Blueprint 必填 handler。
-// 动态 path 值会按路由 path 顺序传给额外的 string 参数。
-// Mount 和 include 前缀也属于该顺序。
-// Func 最多支持 10 个动态 path 值。
-// fn 为 nil 时会 panic。
-func Func[H handlerFunc](fn H) handlerSpec {
-	return handlerSpec{handler: newFuncHandler(fn)}
-}
-
-type handlerFunc interface {
+// HandlerFunc is the set of handler signatures accepted by Blueprint methods.
+// Extra string arguments receive dynamic path values in final route order.
+// HandlerFunc 是 Blueprint 方法接受的 handler 签名集合。
+// 额外的 string 参数按最终路由顺序接收动态 path 值。
+type HandlerFunc interface {
 	~func(http.ResponseWriter, *http.Request) |
 		~func(http.ResponseWriter, *http.Request, string) |
 		~func(http.ResponseWriter, *http.Request, string, string) |
@@ -158,7 +134,7 @@ type paramHandler struct {
 	names []string
 }
 
-func newFuncHandler[H handlerFunc](fn H) http.Handler {
+func newFuncHandler[H HandlerFunc](fn H) http.Handler {
 	if h, ok := any(fn).(http.HandlerFunc); ok {
 		return mustHandler(h)
 	}
@@ -369,21 +345,20 @@ func (b *Blueprint) withDefaults(route Route) Route {
 }
 
 // Handle adds a route.
-// The handler is required as the fourth argument.
-// Panics if spec is invalid.
+// Dynamic path values are passed to extra string arguments in route path order.
+// Mount and include prefixes are part of that order. Up to 10 values are supported.
+// Panics if fn is nil.
 // Handle 添加路由。
-// 第四个参数必须提供 handler。
-// spec 非法时会 panic。
-func (b *Blueprint) Handle(method, path, summary string, spec handlerSpec, opts ...RouteOption) {
+// 动态 path 值会按路由 path 顺序传给额外的 string 参数。
+// Mount 和 include 前缀也属于该顺序，最多支持 10 个值。
+// fn 为 nil 时会 panic。
+func (b *Blueprint) Handle[H HandlerFunc](method, path, summary string, fn H, opts ...RouteOption) {
 	b = requireBlueprint(b)
-	if spec.handler == nil {
-		panic("routes: missing handler")
-	}
 	route := Route{
 		Method:  method,
 		Path:    path,
 		Summary: summary,
-		Handler: spec.handler,
+		Handler: newFuncHandler(fn),
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -395,32 +370,32 @@ func (b *Blueprint) Handle(method, path, summary string, spec handlerSpec, opts 
 
 // Get adds a GET route.
 // Get 添加 GET 路由。
-func (b *Blueprint) Get(path, summary string, spec handlerSpec, opts ...RouteOption) {
-	b.Handle(http.MethodGet, path, summary, spec, opts...)
+func (b *Blueprint) Get[H HandlerFunc](path, summary string, fn H, opts ...RouteOption) {
+	b.Handle(http.MethodGet, path, summary, fn, opts...)
 }
 
 // Post adds a POST route.
 // Post 添加 POST 路由。
-func (b *Blueprint) Post(path, summary string, spec handlerSpec, opts ...RouteOption) {
-	b.Handle(http.MethodPost, path, summary, spec, opts...)
+func (b *Blueprint) Post[H HandlerFunc](path, summary string, fn H, opts ...RouteOption) {
+	b.Handle(http.MethodPost, path, summary, fn, opts...)
 }
 
 // Put adds a PUT route.
 // Put 添加 PUT 路由。
-func (b *Blueprint) Put(path, summary string, spec handlerSpec, opts ...RouteOption) {
-	b.Handle(http.MethodPut, path, summary, spec, opts...)
+func (b *Blueprint) Put[H HandlerFunc](path, summary string, fn H, opts ...RouteOption) {
+	b.Handle(http.MethodPut, path, summary, fn, opts...)
 }
 
 // Patch adds a PATCH route.
 // Patch 添加 PATCH 路由。
-func (b *Blueprint) Patch(path, summary string, spec handlerSpec, opts ...RouteOption) {
-	b.Handle(http.MethodPatch, path, summary, spec, opts...)
+func (b *Blueprint) Patch[H HandlerFunc](path, summary string, fn H, opts ...RouteOption) {
+	b.Handle(http.MethodPatch, path, summary, fn, opts...)
 }
 
 // Delete adds a DELETE route.
 // Delete 添加 DELETE 路由。
-func (b *Blueprint) Delete(path, summary string, spec handlerSpec, opts ...RouteOption) {
-	b.Handle(http.MethodDelete, path, summary, spec, opts...)
+func (b *Blueprint) Delete[H HandlerFunc](path, summary string, fn H, opts ...RouteOption) {
+	b.Handle(http.MethodDelete, path, summary, fn, opts...)
 }
 
 // Include adds child routes under prefix.

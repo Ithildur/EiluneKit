@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"slices"
 
 	"github.com/Ithildur/EiluneKit/contextutil"
 )
@@ -57,10 +58,5 @@ func PrincipalFromContext(ctx context.Context) (Principal, bool) {
 // HasScope reports whether p contains scope.
 // HasScope 返回 p 是否包含 scope。
 func (p Principal) HasScope(scope string) bool {
-	for _, s := range p.Scopes {
-		if s == scope {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(p.Scopes, scope)
 }

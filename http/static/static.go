@@ -190,7 +190,7 @@ func cleanProjectPath(raw string) (string, string, error) {
 		return "", "", fmt.Errorf("%w: %q must be a clean project-relative path without '.' or '..'", ErrInvalidProjectPath, raw)
 	}
 
-	for _, part := range strings.Split(normalized, "/") {
+	for part := range strings.SplitSeq(normalized, "/") {
 		if part == "" || part == "." || part == ".." {
 			return "", "", fmt.Errorf("%w: %q must be a clean project-relative path without '.' or '..'", ErrInvalidProjectPath, raw)
 		}

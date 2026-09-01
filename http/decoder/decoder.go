@@ -1,10 +1,9 @@
 package decoder
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 )
 
@@ -22,34 +21,34 @@ type JSONOptions struct {
 }
 
 // DecodeJSONBody decodes a JSON request body.
+// It rejects duplicate names and invalid UTF-8 and matches struct fields case-sensitively.
 // Call errors.Is(err, ErrBodyTooLarge) or errors.Is(err, ErrInvalidJSON).
 // DecodeJSONBody 解码 JSON 请求体。
+// 它拒绝重复字段名和无效 UTF-8，并区分大小写匹配结构体字段。
 // 调用 errors.Is(err, ErrBodyTooLarge) 或 errors.Is(err, ErrInvalidJSON) 判断错误。
-func DecodeJSONBody(r *http.Request, out interface{}) error {
+func DecodeJSONBody(r *http.Request, out any) error {
 	return DecodeJSONBodyWithOptions(r, out, JSONOptions{})
 }
 
 // DecodeJSONBodyWithOptions decodes a JSON request body with options.
+// It rejects duplicate names and invalid UTF-8 and matches struct fields case-sensitively.
 // Call errors.Is(err, ErrBodyTooLarge) or errors.Is(err, ErrInvalidJSON).
 // DecodeJSONBodyWithOptions 按选项解码 JSON 请求体。
+// 它拒绝重复字段名和无效 UTF-8，并区分大小写匹配结构体字段。
 // 调用 errors.Is(err, ErrBodyTooLarge) 或 errors.Is(err, ErrInvalidJSON) 判断错误。
-func DecodeJSONBodyWithOptions(r *http.Request, out interface{}, opts JSONOptions) error {
-	dec := json.NewDecoder(r.Body)
+func DecodeJSONBodyWithOptions(r *http.Request, out any, opts JSONOptions) error {
+	var jsonOpts []json.Options
 	if opts.DisallowUnknownFields {
-		dec.DisallowUnknownFields()
+		jsonOpts = append(jsonOpts, json.RejectUnknownMembers(true))
 	}
-	if err := dec.Decode(out); err != nil {
+	if err := json.UnmarshalRead(r.Body, out, jsonOpts...); err != nil {
 		return normalizeDecodeError(err)
-	}
-	if err := dec.Decode(&struct{}{}); err != io.EOF {
-		return fmt.Errorf("%w: json body must contain a single value", ErrInvalidJSON)
 	}
 	return nil
 }
 
 func normalizeDecodeError(err error) error {
-	var maxErr *http.MaxBytesError
-	if errors.As(err, &maxErr) {
+	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		return fmt.Errorf("%w: %w", ErrBodyTooLarge, err)
 	}
 	return fmt.Errorf("%w: %w", ErrInvalidJSON, err)

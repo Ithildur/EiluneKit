@@ -7,12 +7,12 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"uuid"
 
 	authstore "github.com/Ithildur/EiluneKit/auth/store"
 	"github.com/Ithildur/EiluneKit/contextutil"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 )
 
 const (
@@ -56,7 +56,7 @@ type claimsContextKey struct{}
 // IssueOptions controls token issuance behavior.
 // IssueOptions 控制 token 签发行为。
 type IssueOptions struct {
-	SessionOnly bool `json:"session_only,omitempty"`
+	SessionOnly bool `json:"session_only,omitzero"`
 }
 
 // Claims contains token claims used by the auth flow.
@@ -72,10 +72,10 @@ type Claims struct {
 // RefreshResult 保存刷新后的 token。
 type RefreshResult struct {
 	Access           string    `json:"access,omitempty"`
-	AccessExpiresAt  time.Time `json:"access_expires_at,omitempty"`
+	AccessExpiresAt  time.Time `json:"access_expires_at,omitzero"`
 	Refresh          string    `json:"refresh,omitempty"`
-	RefreshExpiresAt time.Time `json:"refresh_expires_at,omitempty"`
-	SessionOnly      bool      `json:"session_only,omitempty"`
+	RefreshExpiresAt time.Time `json:"refresh_expires_at,omitzero"`
+	SessionOnly      bool      `json:"session_only,omitzero"`
 }
 
 // SessionInfo is public session metadata for a user.
@@ -191,7 +191,7 @@ func (m *Manager) IssueSessionTokens(ctx context.Context, userID string, opts Is
 	if err != nil {
 		return "", time.Time{}, "", time.Time{}, err
 	}
-	sessionID := uuid.NewString()
+	sessionID := uuid.New().String()
 	access, accessExp, _, err = m.signToken(userID, TokenKindAccess, sessionID, version, m.accessTTL)
 	if err != nil {
 		return "", time.Time{}, "", time.Time{}, err
@@ -403,21 +403,19 @@ func (m *Manager) signToken(userID, kind, sessionID string, version int64, ttl t
 	}
 	now := time.Now().UTC()
 	exp = now.Add(ttl)
-	jti = uuid.NewString()
+	jti = uuid.New().String()
 
 	claims := Claims{
 		Kind:      kind,
 		SessionID: sessionID,
 		Version:   version,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ID:        jti,
-			Subject:   userID,
-			Issuer:    m.issuer,
-			Audience:  jwt.ClaimStrings{m.audience},
-			IssuedAt:  jwt.NewNumericDate(now),
-			NotBefore: jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(exp),
-		},
+		ID:        jti,
+		Subject:   userID,
+		Issuer:    m.issuer,
+		Audience:  jwt.ClaimStrings{m.audience},
+		IssuedAt:  jwt.NewNumericDate(now),
+		NotBefore: jwt.NewNumericDate(now),
+		ExpiresAt: jwt.NewNumericDate(exp),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

@@ -29,7 +29,6 @@ func TestResolveDirRejectsInvalidPath(t *testing.T) {
 	}
 
 	for _, raw := range invalid {
-		raw := raw
 		t.Run(filepath.Base(raw), func(t *testing.T) {
 			t.Parallel()
 			if _, err := static.ResolveDir(raw, static.Options{}); err == nil {

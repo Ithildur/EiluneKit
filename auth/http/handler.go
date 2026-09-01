@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"strings"
 	"time"
+	"uuid"
 
 	"github.com/Ithildur/EiluneKit/auth"
 	authjwt "github.com/Ithildur/EiluneKit/auth/jwt"
@@ -20,7 +21,6 @@ import (
 	"github.com/Ithildur/EiluneKit/http/routes"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 )
 
 // Handler serves auth endpoints.
@@ -90,9 +90,8 @@ func (h *Handler) Routes() []routes.Route {
 	var loginChain []func(stdhttp.Handler) stdhttp.Handler
 	rateLimitOpts := opts.RateLimit
 	if rateLimitOpts != nil && len(rateLimitOpts.TrustedProxies) == 0 && rateLimitOpts.KeyFunc == nil && len(opts.TrustedProxies) > 0 {
-		cloned := *rateLimitOpts
-		cloned.TrustedProxies = append([]netip.Prefix(nil), opts.TrustedProxies...)
-		rateLimitOpts = &cloned
+		rateLimitOpts = new(*rateLimitOpts)
+		rateLimitOpts.TrustedProxies = append([]netip.Prefix(nil), opts.TrustedProxies...)
 	}
 	if rate := LoginRateLimit(rateLimitOpts); rate != nil {
 		loginChain = append(loginChain, rate)
@@ -127,7 +126,7 @@ func (h *Handler) Routes() []routes.Route {
 	authRoutes.Post(
 		"/login",
 		"Login",
-		routes.Func(h.handleLogin),
+		h.handleLogin,
 		loginOpts...,
 	)
 	refreshOpts := addErrorResponses([]routes.RouteOption{
@@ -144,7 +143,7 @@ func (h *Handler) Routes() []routes.Route {
 	authRoutes.Post(
 		"/refresh",
 		"Refresh access token",
-		routes.Func(h.handleRefresh),
+		h.handleRefresh,
 		refreshOpts...,
 	)
 	logoutOpts := addErrorResponses([]routes.RouteOption{
@@ -161,7 +160,7 @@ func (h *Handler) Routes() []routes.Route {
 	authRoutes.Post(
 		"/logout",
 		"Logout",
-		routes.Func(h.handleLogout),
+		h.handleLogout,
 		logoutOpts...,
 	)
 
@@ -181,7 +180,7 @@ func (h *Handler) Routes() []routes.Route {
 	sessions.Get(
 		"/",
 		"List sessions",
-		routes.Func(h.handleListSessions),
+		h.handleListSessions,
 		listSessionsOpts...,
 	)
 	revokeCurrentOpts := withBearerSecurity(addErrorResponses([]routes.RouteOption{
@@ -195,7 +194,7 @@ func (h *Handler) Routes() []routes.Route {
 	sessions.Delete(
 		"/current",
 		"Revoke current session",
-		routes.Func(h.handleDeleteCurrentSession),
+		h.handleDeleteCurrentSession,
 		revokeCurrentOpts...,
 	)
 	revokeAllOpts := withBearerSecurity(addErrorResponses([]routes.RouteOption{
@@ -209,7 +208,7 @@ func (h *Handler) Routes() []routes.Route {
 	sessions.Delete(
 		"/",
 		"Revoke all sessions for current user",
-		routes.Func(h.handleDeleteAllSessions),
+		h.handleDeleteAllSessions,
 		revokeAllOpts...,
 	)
 	revokeSessionOpts := withBearerSecurity(addErrorResponses([]routes.RouteOption{
@@ -230,7 +229,7 @@ func (h *Handler) Routes() []routes.Route {
 	sessions.Delete(
 		"/{sid}",
 		"Revoke a specific session for current user",
-		routes.Handler(stdhttp.HandlerFunc(h.handleDeleteSession)),
+		h.handleDeleteSession,
 		revokeSessionOpts...,
 	)
 	authRoutes.Include("/sessions", sessions)
@@ -302,7 +301,7 @@ func (h *Handler) handleLogin(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		return
 	}
 
-	csrf := uuid.NewString()
+	csrf := uuid.New().String()
 	cfg := h.cookieConfig(r, sessionOnly)
 	authsession.SetRefreshCookie(w, tokens.Refresh, tokens.RefreshExpiresAt, withNameAndPath(cfg, h.options.RefreshCookieName, h.options.RefreshCookiePath))
 	authsession.SetCSRFCookie(w, csrf, tokens.RefreshExpiresAt, withNameAndPath(cfg, h.options.CSRFCookieName, h.options.CSRFCookiePath))
@@ -405,7 +404,7 @@ func (h *Handler) handleRefresh(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		return
 	}
 
-	csrf := uuid.NewString()
+	csrf := uuid.New().String()
 	cfg := h.cookieConfig(r, result.SessionOnly)
 	authsession.SetRefreshCookie(w, result.Refresh, result.RefreshExpiresAt, withNameAndPath(cfg, h.options.RefreshCookieName, h.options.RefreshCookiePath))
 	authsession.SetCSRFCookie(w, csrf, result.RefreshExpiresAt, withNameAndPath(cfg, h.options.CSRFCookieName, h.options.CSRFCookiePath))
