@@ -398,9 +398,6 @@ func (m *Manager) ClearAllSessions(ctx context.Context) error {
 }
 
 func (m *Manager) signToken(userID, kind, sessionID string, version int64, ttl time.Duration) (signed string, exp time.Time, jti string, err error) {
-	if err := m.requireConfigured(); err != nil {
-		return "", time.Time{}, "", err
-	}
 	now := time.Now().UTC()
 	exp = now.Add(ttl)
 	jti = uuid.New().String()
@@ -427,9 +424,6 @@ func (m *Manager) signToken(userID, kind, sessionID string, version int64, ttl t
 }
 
 func (m *Manager) validateTokenWithClaims(ctx context.Context, expectedKind, tokenStr string) (Claims, authstore.SessionState, bool, error) {
-	if err := m.requireConfigured(); err != nil {
-		return Claims{}, authstore.SessionState{}, false, err
-	}
 	ctx = contextutil.Require(ctx)
 	claims, ok := m.parseToken(tokenStr)
 	if !ok {
@@ -491,15 +485,12 @@ func (m *Manager) revokeSessionFromToken(ctx context.Context, expectedKind, toke
 }
 
 func (m *Manager) parseToken(tokenStr string) (Claims, bool) {
-	if strings.TrimSpace(tokenStr) == "" {
-		return Claims{}, false
-	}
-	if m == nil {
-		return Claims{}, false
-	}
-
 	claims := Claims{}
-	parser := jwt.NewParser(m.parserOptions()...)
+	parser := jwt.NewParser(
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithIssuer(m.issuer),
+		jwt.WithAudience(m.audience),
+	)
 	token, err := parser.ParseWithClaims(tokenStr, &claims, func(t *jwt.Token) (any, error) {
 		if t.Method != jwt.SigningMethodHS256 {
 			return nil, jwt.ErrTokenUnverifiable
@@ -515,23 +506,7 @@ func (m *Manager) parseToken(tokenStr string) (Claims, bool) {
 	return claims, true
 }
 
-func (m *Manager) parserOptions() []jwt.ParserOption {
-	opts := []jwt.ParserOption{
-		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
-	}
-	if strings.TrimSpace(m.issuer) != "" {
-		opts = append(opts, jwt.WithIssuer(m.issuer))
-	}
-	if strings.TrimSpace(m.audience) != "" {
-		opts = append(opts, jwt.WithAudience(m.audience))
-	}
-	return opts
-}
-
 func (m *Manager) userVersion(ctx context.Context, userID string) (int64, error) {
-	if err := m.requireConfigured(); err != nil {
-		return 0, err
-	}
 	version, err := m.store.UserVersion(ctx, userID)
 	if err != nil {
 		if errors.Is(err, authstore.ErrStoreUnavailable) {
@@ -543,9 +518,6 @@ func (m *Manager) userVersion(ctx context.Context, userID string) (int64, error)
 }
 
 func (m *Manager) bumpUserVersion(ctx context.Context, userID string) (int64, error) {
-	if err := m.requireConfigured(); err != nil {
-		return 0, err
-	}
 	version, err := m.store.BumpUserVersion(ctx, userID)
 	if err != nil {
 		if errors.Is(err, authstore.ErrStoreUnavailable) {
@@ -557,9 +529,6 @@ func (m *Manager) bumpUserVersion(ctx context.Context, userID string) (int64, er
 }
 
 func (m *Manager) createSession(ctx context.Context, sessionID string, state authstore.SessionState) error {
-	if err := m.requireConfigured(); err != nil {
-		return err
-	}
 	if err := m.store.CreateSession(ctx, sessionID, state); err != nil {
 		if errors.Is(err, authstore.ErrStoreUnavailable) {
 			return ErrStoreUnavailable
@@ -570,9 +539,6 @@ func (m *Manager) createSession(ctx context.Context, sessionID string, state aut
 }
 
 func (m *Manager) session(ctx context.Context, sessionID string) (authstore.SessionState, bool, error) {
-	if err := m.requireConfigured(); err != nil {
-		return authstore.SessionState{}, false, err
-	}
 	state, ok, err := m.store.Session(ctx, sessionID)
 	if err != nil {
 		if errors.Is(err, authstore.ErrStoreUnavailable) {
@@ -584,9 +550,6 @@ func (m *Manager) session(ctx context.Context, sessionID string) (authstore.Sess
 }
 
 func (m *Manager) rotateRefresh(ctx context.Context, sessionID, userID string, expectedVersion int64, oldRefreshID, newRefreshID string, exp time.Time) (bool, error) {
-	if err := m.requireConfigured(); err != nil {
-		return false, err
-	}
 	rotated, err := m.store.RotateRefresh(ctx, sessionID, userID, expectedVersion, oldRefreshID, newRefreshID, exp)
 	if err != nil {
 		if errors.Is(err, authstore.ErrStoreUnavailable) {
@@ -598,9 +561,6 @@ func (m *Manager) rotateRefresh(ctx context.Context, sessionID, userID string, e
 }
 
 func (m *Manager) revokeSession(ctx context.Context, sessionID string) error {
-	if err := m.requireConfigured(); err != nil {
-		return err
-	}
 	if err := m.store.RevokeSession(ctx, sessionID); err != nil {
 		if errors.Is(err, authstore.ErrStoreUnavailable) {
 			return ErrStoreUnavailable
@@ -611,9 +571,6 @@ func (m *Manager) revokeSession(ctx context.Context, sessionID string) error {
 }
 
 func (m *Manager) revokeAllUserSessions(ctx context.Context, userID string, requireClear bool) error {
-	if err := m.requireConfigured(); err != nil {
-		return err
-	}
 	cleaner, ok := m.store.(authstore.UserSessionCleaner)
 	if requireClear && !ok {
 		return ErrSessionClearUnsupported
@@ -638,9 +595,6 @@ func (m *Manager) clearUserSessions(ctx context.Context, cleaner authstore.UserS
 }
 
 func (m *Manager) clearAllSessions(ctx context.Context) error {
-	if err := m.requireConfigured(); err != nil {
-		return err
-	}
 	cleaner, ok := m.store.(authstore.SessionCleaner)
 	if !ok {
 		return ErrSessionClearUnsupported

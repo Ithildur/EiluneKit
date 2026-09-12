@@ -169,11 +169,8 @@ func refreshTokenFromContext(ctx context.Context) (string, bool) {
 }
 
 func parseBearerHeader(header string) (string, bool) {
-	parts := strings.Fields(strings.TrimSpace(header))
+	parts := strings.Fields(header)
 	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-		return "", false
-	}
-	if parts[1] == "" {
 		return "", false
 	}
 	return parts[1], true

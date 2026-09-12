@@ -74,13 +74,7 @@ func collectCandidates(sources CandidateSource) []string {
 	seen := make(map[string]struct{})
 
 	add := func(p string) {
-		if p == "" {
-			return
-		}
 		p = filepath.Clean(p)
-		if p == "" {
-			return
-		}
 		if _, ok := seen[p]; ok {
 			return
 		}

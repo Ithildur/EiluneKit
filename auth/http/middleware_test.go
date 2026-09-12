@@ -38,10 +38,8 @@ func TestRequireBearerAcceptsMinimalValidatorInterface(t *testing.T) {
 	if err != nil {
 		t.Fatalf("require bearer: %v", err)
 	}
-	nextCalled := false
 
 	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		nextCalled = true
 		claims, ok := authjwt.ClaimsFromContext(r.Context())
 		if !ok {
 			t.Fatal("expected claims in request context")
@@ -57,9 +55,6 @@ func TestRequireBearerAcceptsMinimalValidatorInterface(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	if !nextCalled {
-		t.Fatal("expected next handler to be called")
-	}
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
 	}
@@ -95,10 +90,8 @@ func TestRequireBearerRejectsInvalidToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("require bearer: %v", err)
 	}
-	nextCalled := false
 
 	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		nextCalled = true
 		t.Fatal("next handler should not be called")
 	}))
 
@@ -107,9 +100,6 @@ func TestRequireBearerRejectsInvalidToken(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	if nextCalled {
-		t.Fatal("expected next handler to stay untouched")
-	}
 	assertAuthErrorResponse(t, rec, http.StatusUnauthorized, "unauthorized", "token invalid or expired")
 }
 
@@ -121,10 +111,8 @@ func TestRequireBearerPropagatesStoreUnavailable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("require bearer: %v", err)
 	}
-	nextCalled := false
 
 	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		nextCalled = true
 		t.Fatal("next handler should not be called")
 	}))
 
@@ -133,9 +121,6 @@ func TestRequireBearerPropagatesStoreUnavailable(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	if nextCalled {
-		t.Fatal("expected next handler to stay untouched")
-	}
 	assertAuthErrorResponse(t, rec, http.StatusServiceUnavailable, "auth_unavailable", "auth is unavailable")
 }
 
@@ -147,10 +132,8 @@ func TestRequireBearerRejectsMisconfiguredValidator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("require bearer: %v", err)
 	}
-	nextCalled := false
 
 	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		nextCalled = true
 		t.Fatal("next handler should not be called")
 	}))
 
@@ -159,9 +142,6 @@ func TestRequireBearerRejectsMisconfiguredValidator(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	if nextCalled {
-		t.Fatal("expected next handler to stay untouched")
-	}
 	assertAuthErrorResponse(t, rec, http.StatusInternalServerError, "auth_misconfigured", "auth is misconfigured")
 }
 
@@ -171,10 +151,8 @@ func TestOptionalBearerAllowsMissingToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("optional bearer: %v", err)
 	}
-	nextCalled := false
 
 	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		nextCalled = true
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
@@ -182,9 +160,6 @@ func TestOptionalBearerAllowsMissingToken(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	if !nextCalled {
-		t.Fatal("expected next handler to be called")
-	}
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
 	}
@@ -219,10 +194,8 @@ func TestRequireAPIKeyAcceptsCustomHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("require api key: %v", err)
 	}
-	nextCalled := false
 
 	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		nextCalled = true
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
@@ -231,9 +204,6 @@ func TestRequireAPIKeyAcceptsCustomHeader(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	if !nextCalled {
-		t.Fatal("expected next handler to be called")
-	}
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
 	}

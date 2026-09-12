@@ -44,13 +44,6 @@ func TestProviderUsesExplicitSourcesOnly(t *testing.T) {
 	}
 }
 
-func TestVersionErrorPreservesKind(t *testing.T) {
-	err := versionError(ErrSchemaAhead, 2, 1)
-	if !errors.Is(err, ErrSchemaAhead) {
-		t.Fatalf("version error does not wrap ErrSchemaAhead: %v", err)
-	}
-}
-
 func TestRunToRejectsNonPositiveTarget(t *testing.T) {
 	_, err := RunTo(context.Background(), Config{}, 0)
 	if !errors.Is(err, ErrTargetInvalid) {

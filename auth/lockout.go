@@ -74,11 +74,10 @@ type MemoryLockoutOptions struct {
 // 它存储调用方提供 key 的固定长度 hash。
 // 使用 NewMemoryLockout 创建；零值不可直接使用。
 type MemoryLockout struct {
-	mu     sync.Mutex
-	items  map[string]lockoutItem
-	opts   MemoryLockoutOptions
-	now    func() time.Time
-	maxKey int
+	mu    sync.Mutex
+	items map[string]lockoutItem
+	opts  MemoryLockoutOptions
+	now   func() time.Time
 }
 
 type lockoutItem struct {
@@ -108,10 +107,9 @@ func NewMemoryLockout(opts MemoryLockoutOptions) *MemoryLockout {
 		now = func() time.Time { return time.Now().UTC() }
 	}
 	return &MemoryLockout{
-		items:  make(map[string]lockoutItem),
-		opts:   opts,
-		now:    now,
-		maxKey: opts.MaxKeys,
+		items: make(map[string]lockoutItem),
+		opts:  opts,
+		now:   now,
 	}
 }
 
@@ -207,7 +205,7 @@ func memoryLockoutKey(key string) (string, error) {
 }
 
 func (l *MemoryLockout) ensureCapacity(now time.Time, keep string) {
-	if l.maxKey <= 0 || len(l.items) < l.maxKey {
+	if len(l.items) < l.opts.MaxKeys {
 		return
 	}
 	for key, item := range l.items {
@@ -218,7 +216,7 @@ func (l *MemoryLockout) ensureCapacity(now time.Time, keep string) {
 			delete(l.items, key)
 		}
 	}
-	if len(l.items) < l.maxKey {
+	if len(l.items) < l.opts.MaxKeys {
 		return
 	}
 	var oldestKey string

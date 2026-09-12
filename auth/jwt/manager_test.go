@@ -169,6 +169,42 @@ func TestRevokeAllSessionsInvalidatesExistingTokens(t *testing.T) {
 	}
 }
 
+func TestManagerValidatesIssuerAndAudience(t *testing.T) {
+	store := authstore.NewMemoryStore()
+	const key = "0123456789abcdef0123456789abcdef"
+	mgr, err := authjwt.New(key, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	access, _, refresh, _, err := mgr.IssueSessionTokens(t.Context(), "user-1", authjwt.IssueOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		opts authjwt.ManagerOptions
+		want bool
+	}{
+		{name: "defaults", want: true},
+		{name: "blank options", opts: authjwt.ManagerOptions{Issuer: " \t", Audience: " \t"}, want: true},
+		{name: "different issuer", opts: authjwt.ManagerOptions{Issuer: "another-issuer"}},
+		{name: "different audience", opts: authjwt.ManagerOptions{Audience: "another-client"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			validator, err := authjwt.NewWithOptions(key, store, tc.opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, ok, err := validator.ValidateAccessToken(t.Context(), access); err != nil || ok != tc.want {
+				t.Fatalf("validate access: ok=%v err=%v, want ok=%v", ok, err, tc.want)
+			}
+			if _, ok, err := validator.ValidateRefreshToken(t.Context(), refresh); err != nil || ok != tc.want {
+				t.Fatalf("validate refresh: ok=%v err=%v, want ok=%v", ok, err, tc.want)
+			}
+		})
+	}
+}
+
 func TestManagerSessionsListsStoredSessions(t *testing.T) {
 	mgr, err := authjwt.New("0123456789abcdef0123456789abcdef", authstore.NewMemoryStore())
 	if err != nil {

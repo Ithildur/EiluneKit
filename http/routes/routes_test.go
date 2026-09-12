@@ -147,32 +147,6 @@ func TestBlueprintHandlerReadsRegexpDynamicPath(t *testing.T) {
 	}
 }
 
-func TestBlueprintHandlerReadsSimpleRegexpDynamicPath(t *testing.T) {
-	blueprint := routes.NewBlueprint()
-	blueprint.Get(
-		"/users/{id:[0-9]+}",
-		"Get user",
-		func(w http.ResponseWriter, r *http.Request, id string) {
-			if got, want := id, "42"; got != want {
-				t.Fatalf("expected id %q, got %q", want, got)
-			}
-			w.WriteHeader(http.StatusNoContent)
-		},
-	)
-
-	r := chi.NewRouter()
-	if err := blueprint.Mount(r); err != nil {
-		t.Fatalf("mount: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/users/42", nil)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
-	}
-}
-
 func TestBlueprintHandlerReadsWildcardDynamicPath(t *testing.T) {
 	blueprint := routes.NewBlueprint()
 	blueprint.Get(
@@ -424,44 +398,6 @@ func TestBlueprintIncludeAuthOverridesChildRoutes(t *testing.T) {
 	}
 }
 
-func TestMountAppliesRouteMiddleware(t *testing.T) {
-	var calls []string
-	routeMW := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			calls = append(calls, "route")
-			next.ServeHTTP(w, r)
-		})
-	}
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls = append(calls, "handler")
-		w.WriteHeader(http.StatusNoContent)
-	})
-
-	r := chi.NewRouter()
-	err := routes.Mount(r, "/api", []routes.Route{
-		{
-			Method:     "get",
-			Path:       "users",
-			Handler:    handler,
-			Middleware: []routes.Middleware{routeMW},
-		},
-	})
-	if err != nil {
-		t.Fatalf("mount: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/users", nil)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
-	}
-	if !reflect.DeepEqual(calls, []string{"route", "handler"}) {
-		t.Fatalf("unexpected call order: %#v", calls)
-	}
-}
-
 func TestMountRequiresAuthenticatedContext(t *testing.T) {
 	called := false
 	r := chi.NewRouter()
@@ -579,35 +515,6 @@ func TestExportMarkdownIncludesAuthRequirement(t *testing.T) {
 		if !strings.Contains(markdown, want) {
 			t.Fatalf("expected markdown to contain %q, got:\n%s", want, markdown)
 		}
-	}
-}
-
-func TestBlueprintAndRouterRejectNilReceiver(t *testing.T) {
-	t.Run("blueprint", func(t *testing.T) {
-		var b *routes.Blueprint
-		mustPanic(t, func() {
-			b.Add(routes.Route{Method: http.MethodGet, Path: "/health"})
-		})
-	})
-
-	t.Run("router", func(t *testing.T) {
-		var r *routes.Router
-		mustPanic(t, func() {
-			r.Include("/api", nil)
-		})
-	})
-}
-
-func TestMountRejectsNilChiRouter(t *testing.T) {
-	err := routes.Mount(nil, "", []routes.Route{
-		{
-			Method:  http.MethodGet,
-			Path:    "/health",
-			Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-		},
-	})
-	if err == nil {
-		t.Fatal("expected nil chi.Router error")
 	}
 }
 

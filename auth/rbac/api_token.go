@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"fmt"
 	"strings"
 	"time"
 	"uuid"
@@ -90,17 +89,15 @@ func HashToken(raw string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func createRawAPIToken() (string, string, string, error) {
+func createRawAPIToken() (string, string, string) {
 	buf := make([]byte, defaultAPITokenBytes)
-	if _, err := rand.Read(buf); err != nil {
-		return "", "", "", fmt.Errorf("generate api token: %w", err)
-	}
+	rand.Read(buf)
 	raw := apiTokenSecretPrefix + base64.RawURLEncoding.EncodeToString(buf)
 	prefix := raw[:defaultAPITokenPrefix]
-	return raw, prefix, HashToken(raw), nil
+	return raw, prefix, HashToken(raw)
 }
 
-func normalizeAPITokenForStore(req CreateAPITokenRequest, raw, prefix, hash string, now time.Time) (APIToken, error) {
+func normalizeAPITokenForStore(req CreateAPITokenRequest, prefix, hash string, now time.Time) (APIToken, error) {
 	id := strings.TrimSpace(req.ID)
 	if id == "" {
 		id = uuid.New().String()
@@ -119,9 +116,6 @@ func normalizeAPITokenForStore(req CreateAPITokenRequest, raw, prefix, hash stri
 		Scopes:    append([]string(nil), req.Scopes...),
 		ExpiresAt: req.ExpiresAt,
 		CreatedAt: now,
-	}
-	if raw == "" || prefix == "" || hash == "" {
-		return APIToken{}, ErrBearerTokenRequired
 	}
 	return token, nil
 }

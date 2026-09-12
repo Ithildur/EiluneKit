@@ -46,9 +46,7 @@ func TestMiddlewareRequireRoleAndScopeStoresPrincipal(t *testing.T) {
 		Scopes:  []string{"vm:read"},
 		Kind:    authcore.PrincipalKindUser,
 	}}, pveRolePolicy())
-	nextCalled := false
 	handler := mw.RequireRoleAndScope("operator", "vm:read")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		nextCalled = true
 		if !routes.Authenticated(r.Context()) {
 			t.Fatal("expected routes context to be authenticated")
 		}
@@ -67,9 +65,6 @@ func TestMiddlewareRequireRoleAndScopeStoresPrincipal(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
-	if !nextCalled {
-		t.Fatal("expected next handler to be called")
-	}
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
 	}

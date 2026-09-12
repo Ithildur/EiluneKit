@@ -135,26 +135,15 @@ func resolveDir(relPath string, requireIndex bool, opts Options) (string, error)
 		}
 	}
 
-	var roots []string
 	home, err := appdir.DiscoverHome(appDirOpts)
-	switch {
-	case err == nil && home != "":
-		roots = append(roots, home)
-	case err != nil && errors.Is(err, appdir.ErrEnvInvalid):
-		return "", fmt.Errorf("static: discover app home: %w", err)
-	case err != nil && !errors.Is(err, appdir.ErrNoCandidates) && !errors.Is(err, appdir.ErrNotFound):
+	if err != nil && !errors.Is(err, appdir.ErrNoCandidates) && !errors.Is(err, appdir.ErrNotFound) {
 		return "", fmt.Errorf("static: discover app home: %w", err)
 	}
 
-	req := normalized
-	if requireIndex {
-		req = path.Join(normalized, "index.html")
-	}
-
-	for _, root := range roots {
-		candidates := []string{root}
-		if filepath.Base(root) != "web" {
-			candidates = append(candidates, filepath.Join(root, "web"))
+	if err == nil {
+		candidates := []string{home}
+		if filepath.Base(home) != "web" {
+			candidates = append(candidates, filepath.Join(home, "web"))
 		}
 		for _, base := range candidates {
 			full := filepath.Join(base, relFSPath)
@@ -170,6 +159,10 @@ func resolveDir(relPath string, requireIndex bool, opts Options) (string, error)
 		}
 	}
 
+	req := normalized
+	if requireIndex {
+		req = path.Join(normalized, "index.html")
+	}
 	return "", fmt.Errorf("static: cannot find frontend assets in project path %q (required: %s)", normalized, req)
 }
 

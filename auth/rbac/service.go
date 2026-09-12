@@ -83,7 +83,7 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (Tokens, bool, er
 	}
 	req.Username = strings.TrimSpace(req.Username)
 	req.LockoutKey = strings.TrimSpace(req.LockoutKey)
-	if s.lockout != nil && req.LockoutKey == "" {
+	if req.LockoutKey == "" {
 		return Tokens{}, false, ErrLockoutKeyRequired
 	}
 	if req.Username == "" || req.Password == "" {
@@ -287,11 +287,8 @@ func (s *Service) CreateAPIToken(ctx context.Context, req CreateAPITokenRequest)
 	if err != nil {
 		return CreatedAPIToken{}, err
 	}
-	raw, prefix, hash, err := createRawAPIToken()
-	if err != nil {
-		return CreatedAPIToken{}, err
-	}
-	token, err := normalizeAPITokenForStore(req, raw, prefix, hash, s.now())
+	raw, prefix, hash := createRawAPIToken()
+	token, err := normalizeAPITokenForStore(req, prefix, hash, s.now())
 	if err != nil {
 		return CreatedAPIToken{}, err
 	}
@@ -349,9 +346,6 @@ func (s *Service) principalForClaims(ctx context.Context, claims authjwt.Claims)
 	if !ok || user.Disabled {
 		return authcore.Principal{}, false, nil
 	}
-	if strings.TrimSpace(user.ID) == "" {
-		return authcore.Principal{}, false, nil
-	}
 	if user.ID != subject {
 		return authcore.Principal{}, false, nil
 	}
@@ -359,9 +353,6 @@ func (s *Service) principalForClaims(ctx context.Context, claims authjwt.Claims)
 }
 
 func (s *Service) locked(ctx context.Context, key string) (time.Time, bool, error) {
-	if s.lockout == nil {
-		return time.Time{}, false, nil
-	}
 	until, locked, err := s.lockout.Check(ctx, key)
 	if err != nil {
 		return time.Time{}, false, fmt.Errorf("check login lockout: %w", err)
@@ -370,9 +361,6 @@ func (s *Service) locked(ctx context.Context, key string) (time.Time, bool, erro
 }
 
 func (s *Service) clearLockout(ctx context.Context, key string) error {
-	if s.lockout == nil {
-		return nil
-	}
 	if err := s.lockout.Clear(ctx, key); err != nil {
 		return fmt.Errorf("clear login lockout: %w", err)
 	}
@@ -380,14 +368,9 @@ func (s *Service) clearLockout(ctx context.Context, key string) error {
 }
 
 func (s *Service) rejectLogin(ctx context.Context, req LoginRequest, userID, reason string) error {
-	var lockedUntil time.Time
-	var locked bool
-	if s.lockout != nil && reason != LoginFailureLocked {
-		var err error
-		lockedUntil, locked, err = s.lockout.RecordFailure(ctx, req.LockoutKey)
-		if err != nil {
-			return fmt.Errorf("record login failure: %w", err)
-		}
+	lockedUntil, locked, err := s.lockout.RecordFailure(ctx, req.LockoutKey)
+	if err != nil {
+		return fmt.Errorf("record login failure: %w", err)
 	}
 	if err := s.emitLoginFailure(ctx, LoginFailure{
 		Username: req.Username,
