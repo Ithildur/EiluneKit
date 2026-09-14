@@ -17,6 +17,7 @@ import (
 	"github.com/Ithildur/EiluneKit/http/middleware"
 	"github.com/Ithildur/EiluneKit/http/response"
 	"github.com/Ithildur/EiluneKit/http/routes"
+	"github.com/Ithildur/EiluneKit/internal/routepath"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -64,6 +65,9 @@ func NewHandler(service *corerbac.Service, opts Options) (*Handler, error) {
 		return nil, corerbac.ErrServiceMisconfigured
 	}
 	effective := applyOptions(DefaultOptions(), opts)
+	if err := routepath.ValidatePrefix(*effective.BasePath); err != nil {
+		return nil, fmt.Errorf("rbac auth: BasePath: %w", err)
+	}
 	return &Handler{
 		auth:       service,
 		options:    effective,
@@ -189,7 +193,7 @@ func (h *Handler) Routes() []routes.Route {
 	)
 
 	root := routes.NewBlueprint()
-	root.Include(h.options.BasePath, authRoutes)
+	root.Include(*h.options.BasePath, authRoutes)
 	return root.Routes()
 }
 

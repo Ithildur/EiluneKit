@@ -68,7 +68,7 @@ func (s *testUserStore) GetUserByUsername(ctx context.Context, username string) 
 	return user, ok, nil
 }
 
-func newTestHandler(t *testing.T) (*rbachttp.Handler, *chi.Mux) {
+func newTestHandler(t *testing.T, options ...rbachttp.Options) (*rbachttp.Handler, *chi.Mux) {
 	t.Helper()
 	manager, err := authjwt.New("0123456789abcdef0123456789abcdef", authstore.NewMemoryStore())
 	if err != nil {
@@ -89,7 +89,11 @@ func newTestHandler(t *testing.T) (*rbachttp.Handler, *chi.Mux) {
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
-	handler, err := rbachttp.NewHandler(service, rbachttp.Options{})
+	var opts rbachttp.Options
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	handler, err := rbachttp.NewHandler(service, opts)
 	if err != nil {
 		t.Fatalf("new handler: %v", err)
 	}
@@ -98,6 +102,24 @@ func newTestHandler(t *testing.T) (*rbachttp.Handler, *chi.Mux) {
 		t.Fatalf("register handler: %v", err)
 	}
 	return handler, router
+}
+
+func TestHandlerBasePath(t *testing.T) {
+	for _, path := range []string{"/auth", "auth/", "/", " auth"} {
+		if _, err := rbachttp.NewHandler(&corerbac.Service{}, rbachttp.Options{BasePath: new(path)}); err == nil {
+			t.Fatalf("accepted invalid BasePath %q", path)
+		}
+	}
+	basePath := ""
+	h, router := newTestHandler(t, rbachttp.Options{BasePath: &basePath})
+	basePath = "changed"
+	if got := h.Routes()[0].Path; got != "/login" {
+		t.Fatalf("BasePath changed after construction: %q", got)
+	}
+	rec := serve(router, http.MethodGet, "/me", "", nil)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("root endpoint status: %d", rec.Code)
+	}
 }
 
 func serve(router http.Handler, method, path, body string, mutate func(*http.Request)) *httptest.ResponseRecorder {

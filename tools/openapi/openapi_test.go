@@ -23,6 +23,46 @@ type widgetResponse struct {
 	Name string `json:"name"`
 }
 
+func TestGeneratePreservesTrailingSlash(t *testing.T) {
+	child := routes.NewBlueprint()
+	for _, route := range []struct{ path, operation string }{
+		{"", "getAPI"},
+		{"/", "getAPIRoot"},
+	} {
+		child.Get(route.path, "", func(http.ResponseWriter, *http.Request) {},
+			routes.OperationID(route.operation), routes.EmptyResponse(http.StatusNoContent, "Success"))
+	}
+	api := routes.NewBlueprint()
+	api.Include("", child)
+	payload, err := openapi.Generate(api.RoutesAt("api"), openapi.Options{Title: "API", Version: "1.0.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Paths map[string]map[string]struct {
+			OperationID string `json:"operationId"`
+		} `json:"paths"`
+	}
+	if err := json.Unmarshal(payload, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Paths) != 2 || doc.Paths["/api"]["get"].OperationID != "getAPI" || doc.Paths["/api/"]["get"].OperationID != "getAPIRoot" {
+		t.Fatalf("unexpected paths: %s", payload)
+	}
+}
+
+func TestGenerateRejectsPathsWithoutLeadingSlash(t *testing.T) {
+	for _, path := range []string{"api", " /api", "/api "} {
+		_, err := openapi.Generate([]routes.Route{{
+			Method: http.MethodGet, Path: path, OperationID: "getAPI",
+			Responses: map[string]routes.Response{"204": {Description: "Success"}},
+		}}, openapi.Options{Title: "API", Version: "1.0.0"})
+		if err == nil {
+			t.Fatalf("accepted invalid path %q", path)
+		}
+	}
+}
+
 func TestGenerateOpenAPI31Contract(t *testing.T) {
 	api := routes.NewBlueprint()
 	api.Put(
@@ -58,14 +98,14 @@ func TestGenerateOpenAPI31Contract(t *testing.T) {
 		}),
 	)
 
-	payload, err := openapi.Generate(api.RoutesAt("/api"), openapi.Options{
+	payload, err := openapi.Generate(api.RoutesAt("api"), openapi.Options{
 		Title:   "Widget API",
 		Version: "1.0.0",
 	})
 	if err != nil {
 		t.Fatalf("generate OpenAPI: %v", err)
 	}
-	again, err := openapi.Generate(api.RoutesAt("/api"), openapi.Options{
+	again, err := openapi.Generate(api.RoutesAt("api"), openapi.Options{
 		Title:   "Widget API",
 		Version: "1.0.0",
 	})

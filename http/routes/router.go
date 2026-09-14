@@ -19,12 +19,11 @@ func NewRouter() *Router {
 }
 
 // Include adds routes under prefix.
+// Prefix must be relative without a trailing slash; invalid paths or prefixes panic.
 // Include 在 prefix 下添加路由。
+// prefix 必须是无尾斜线的相对目录；无效路径或前缀会 panic。
 func (r *Router) Include(prefix string, routes []Route) {
 	r = requireRouter(r)
-	if len(routes) == 0 {
-		return
-	}
 	r.routes = append(r.routes, WithPrefix(prefix, routes)...)
 }
 
@@ -36,7 +35,9 @@ func (r *Router) Routes() []Route {
 }
 
 // Mount registers the routes on router.
+// Registration conflicts panic; see [MountWithOptions].
 // Mount 在 router 上注册路由。
+// 注册冲突会 panic；参见 [MountWithOptions]。
 func (r *Router) Mount(router chi.Router, prefix string) error {
 	r = requireRouter(r)
 	return Mount(router, prefix, r.routes)

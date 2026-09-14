@@ -1,11 +1,10 @@
 package routes
 
 import (
-	"fmt"
 	"net/http"
-	"reflect"
-	"strings"
+	"slices"
 
+	"github.com/Ithildur/EiluneKit/internal/routepath"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -91,172 +90,6 @@ func Use(mw ...Middleware) RouteOption {
 	}
 }
 
-// HandlerFunc is the set of handler signatures accepted by Blueprint methods.
-// Extra string arguments receive dynamic path values in final route order.
-// HandlerFunc 是 Blueprint 方法接受的 handler 签名集合。
-// 额外的 string 参数按最终路由顺序接收动态 path 值。
-type HandlerFunc interface {
-	~func(http.ResponseWriter, *http.Request) |
-		~func(http.ResponseWriter, *http.Request, string) |
-		~func(http.ResponseWriter, *http.Request, string, string) |
-		~func(http.ResponseWriter, *http.Request, string, string, string) |
-		~func(http.ResponseWriter, *http.Request, string, string, string, string) |
-		~func(http.ResponseWriter, *http.Request, string, string, string, string, string) |
-		~func(http.ResponseWriter, *http.Request, string, string, string, string, string, string) |
-		~func(http.ResponseWriter, *http.Request, string, string, string, string, string, string, string) |
-		~func(http.ResponseWriter, *http.Request, string, string, string, string, string, string, string, string) |
-		~func(http.ResponseWriter, *http.Request, string, string, string, string, string, string, string, string, string) |
-		~func(http.ResponseWriter, *http.Request, string, string, string, string, string, string, string, string, string, string)
-}
-
-func mustHandler(h http.Handler) http.Handler {
-	if isNilHandler(h) {
-		panic("routes: nil handler")
-	}
-	return h
-}
-
-func isNilHandler(h http.Handler) bool {
-	if h == nil {
-		return true
-	}
-	v := reflect.ValueOf(h)
-	switch v.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return v.IsNil()
-	default:
-		return false
-	}
-}
-
-type paramHandler struct {
-	fn    reflect.Value
-	names []string
-}
-
-func newFuncHandler[H HandlerFunc](fn H) http.Handler {
-	if h, ok := any(fn).(http.HandlerFunc); ok {
-		return mustHandler(h)
-	}
-	if h, ok := any(fn).(func(http.ResponseWriter, *http.Request)); ok {
-		return mustHandler(http.HandlerFunc(h))
-	}
-	v := reflect.ValueOf(fn)
-	if v.IsNil() {
-		panic("routes: nil handler function")
-	}
-	if v.Type().NumIn() == 2 {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			v.Call([]reflect.Value{reflect.ValueOf(w), reflect.ValueOf(r)})
-		})
-	}
-	return &paramHandler{fn: v}
-}
-
-func (h *paramHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if h == nil {
-		panic("routes: nil path params handler")
-	}
-	if len(h.names) < h.paramCount() {
-		http.Error(w, "route path params are not bound", http.StatusInternalServerError)
-		return
-	}
-
-	args := make([]reflect.Value, 0, h.fn.Type().NumIn())
-	args = append(args, reflect.ValueOf(w), reflect.ValueOf(r))
-	for _, name := range h.names[:h.paramCount()] {
-		args = append(args, reflect.ValueOf(pathParam(r, name)))
-	}
-	h.fn.Call(args)
-}
-
-func (h *paramHandler) bindPath(path string) (http.Handler, error) {
-	names := pathParamNames(path)
-	if len(names) != h.paramCount() {
-		return nil, fmt.Errorf("handler expects %d path params, route has %d", h.paramCount(), len(names))
-	}
-	if dup := duplicatePathParam(names); dup != "" {
-		return nil, fmt.Errorf("duplicate path param %q", dup)
-	}
-	out := *h
-	out.names = append([]string(nil), names...)
-	return &out, nil
-}
-
-func (h *paramHandler) paramCount() int {
-	return h.fn.Type().NumIn() - 2
-}
-
-func bindPathHandler(h http.Handler, path string) (http.Handler, error) {
-	bound, ok := h.(interface {
-		bindPath(string) (http.Handler, error)
-	})
-	if !ok {
-		return h, nil
-	}
-	return bound.bindPath(path)
-}
-
-func pathParam(r *http.Request, name string) string {
-	if value := r.PathValue(name); value != "" {
-		return value
-	}
-	return chi.URLParam(r, name)
-}
-
-func pathParamNames(path string) []string {
-	names := make([]string, 0)
-	for i := 0; i < len(path); i++ {
-		switch path[i] {
-		case '{':
-			end := pathParamEnd(path, i)
-			if end < 0 {
-				return names
-			}
-			name := path[i+1 : end]
-			if colon := strings.IndexByte(name, ':'); colon >= 0 {
-				name = name[:colon]
-			}
-			if name != "" {
-				names = append(names, name)
-			}
-			i = end
-		case '*':
-			if (i == 0 || path[i-1] == '/') && (i+1 == len(path) || path[i+1] == '/') {
-				names = append(names, "*")
-			}
-		}
-	}
-	return names
-}
-
-func pathParamEnd(path string, start int) int {
-	depth := 0
-	for i := start; i < len(path); i++ {
-		switch path[i] {
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return i
-			}
-		}
-	}
-	return -1
-}
-
-func duplicatePathParam(names []string) string {
-	seen := make(map[string]struct{}, len(names))
-	for _, name := range names {
-		if _, ok := seen[name]; ok {
-			return name
-		}
-		seen[name] = struct{}{}
-	}
-	return ""
-}
-
 // IncludeOption modifies child routes during Include.
 // IncludeOption 在 Include 时修改子路由。
 type IncludeOption func(*includeConfig)
@@ -315,8 +148,10 @@ func NewBlueprint(opts ...BlueprintOption) *Blueprint {
 
 // Add adds routes.
 // The blueprint keeps its own copies.
+// Panics if a non-empty route path does not start with a single slash or has surrounding whitespace.
 // Add 添加路由。
 // Blueprint 会保留自己的副本。
+// 非空路径未以单个斜线开头或含首尾空白时 panic。
 func (b *Blueprint) Add(routeList ...Route) {
 	b = requireBlueprint(b)
 	if len(routeList) == 0 {
@@ -324,6 +159,9 @@ func (b *Blueprint) Add(routeList ...Route) {
 	}
 	owned := cloneRoutes(routeList)
 	for i := range owned {
+		if err := routepath.Validate(owned[i].Path); err != nil {
+			panic("routes: " + err.Error())
+		}
 		owned[i] = b.withDefaults(owned[i])
 	}
 	b.routes = append(b.routes, owned...)
@@ -331,27 +169,25 @@ func (b *Blueprint) Add(routeList ...Route) {
 
 func (b *Blueprint) withDefaults(route Route) Route {
 	if len(b.tags) > 0 {
-		tags := append([]string(nil), b.tags...)
-		route.Tags = append(tags, route.Tags...)
+		route.Tags = slices.Concat(b.tags, route.Tags)
 	}
 	if b.hasAuth && route.Auth == "" {
 		route.Auth = b.auth
 	}
 	if len(b.middleware) > 0 {
-		mw := append([]Middleware(nil), b.middleware...)
-		route.Middleware = append(mw, route.Middleware...)
+		route.Middleware = slices.Concat(b.middleware, route.Middleware)
 	}
 	return route
 }
 
 // Handle adds a route.
 // Dynamic path values are passed to extra string arguments in route path order.
-// Mount and include prefixes are part of that order. Up to 10 values are supported.
-// Panics if fn is nil.
+// Mount and include prefixes are part of that order. Up to 15 values are supported.
+// Panics if fn is nil or path uses invalid endpoint syntax.
 // Handle 添加路由。
 // 动态 path 值会按路由 path 顺序传给额外的 string 参数。
-// Mount 和 include 前缀也属于该顺序，最多支持 10 个值。
-// fn 为 nil 时会 panic。
+// Mount 和 include 前缀也属于该顺序，最多支持 15 个值。
+// fn 为 nil 或 path 不符合端点路径语法时 panic。
 func (b *Blueprint) Handle[H HandlerFunc](method, path, summary string, fn H, opts ...RouteOption) {
 	b = requireBlueprint(b)
 	route := Route{
@@ -399,7 +235,9 @@ func (b *Blueprint) Delete[H HandlerFunc](path, summary string, fn H, opts ...Ro
 }
 
 // Include adds child routes under prefix.
+// Prefix must be relative without a trailing slash; invalid prefixes panic.
 // Include 在 prefix 下添加子路由。
+// prefix 必须是无尾斜线的相对目录；无效前缀会 panic。
 func (b *Blueprint) Include(prefix string, child *Blueprint, opts ...IncludeOption) {
 	b = requireBlueprint(b)
 	child = requireBlueprint(child)
@@ -411,19 +249,19 @@ func (b *Blueprint) Include(prefix string, child *Blueprint, opts ...IncludeOpti
 		}
 	}
 
-	routeList := child.Routes()
-	if len(cfg.tags) > 0 {
-		routeList = WithTags(routeList, cfg.tags...)
-	}
-	if cfg.hasAuth {
-		for i := range routeList {
-			routeList[i].Auth = cfg.auth
+	routeList := WithPrefix(prefix, child.routes)
+	for i := range routeList {
+		route := &routeList[i]
+		route.Tags = append(route.Tags, cfg.tags...)
+		if cfg.hasAuth {
+			route.Auth = cfg.auth
 		}
+		if len(cfg.middleware) > 0 {
+			route.Middleware = slices.Concat(cfg.middleware, route.Middleware)
+		}
+		*route = b.withDefaults(*route)
 	}
-	if len(cfg.middleware) > 0 {
-		routeList = WithMiddleware(routeList, cfg.middleware...)
-	}
-	b.Add(WithPrefix(prefix, routeList)...)
+	b.routes = append(b.routes, routeList...)
 }
 
 // Routes returns a copy of the routes.
@@ -433,10 +271,10 @@ func (b *Blueprint) Routes() []Route {
 	return cloneRoutes(b.routes)
 }
 
-// RoutesAt returns route copies with prefix applied to their paths.
+// RoutesAt returns route copies with the mount directory applied to endpoint paths.
 // Use the returned routes for both mounting and API contract generation.
 // Dynamic prefix parameters default to required string path parameters.
-// RoutesAt 返回 path 已添加 prefix 的路由副本。
+// RoutesAt 返回端点 path 已添加挂载目录的路由副本。
 // 将返回的路由同时用于挂载和 API 契约生成。
 // 动态前缀参数默认成为必填的 string path 参数。
 func (b *Blueprint) RoutesAt(prefix string) []Route {
@@ -445,13 +283,17 @@ func (b *Blueprint) RoutesAt(prefix string) []Route {
 }
 
 // Mount registers the routes on router.
+// Registration conflicts panic; see [MountWithOptions].
 // Mount 在 router 上注册路由。
+// 注册冲突会 panic；参见 [MountWithOptions]。
 func (b *Blueprint) Mount(router chi.Router) error {
 	return b.MountAt(router, "")
 }
 
-// MountAt registers the routes under prefix.
-// MountAt 在 prefix 下注册路由。
+// MountAt registers routes under a relative prefix without a trailing slash.
+// Registration conflicts panic; see [MountWithOptions].
+// MountAt 在无尾斜线的相对 prefix 下注册路由。
+// 注册冲突会 panic；参见 [MountWithOptions]。
 func (b *Blueprint) MountAt(router chi.Router, prefix string) error {
 	b = requireBlueprint(b)
 	return Mount(router, prefix, b.routes)

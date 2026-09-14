@@ -104,9 +104,7 @@ header 名为空时默认使用 `X-API-Key`。
 
 ## 路由
 
-默认基础路径：`/auth`。
-
-下表是路由概览。请求、响应、状态码、参数和 security 契约从 `Handler.Routes()` 生成 OpenAPI。
+默认 HTTP 路径：
 
 | 路由 | 认证 | 中间件 |
 |---|---|---|
@@ -118,7 +116,7 @@ header 名为空时默认使用 `X-API-Key`。
 | `DELETE /auth/sessions` | `required` | `RequireBearer` |
 | `DELETE /auth/sessions/{sid}` | `required` | `RequireBearer` |
 
-`Handler.Routes()` 会返回同一组 `http/routes.Route`。返回的路由已经包含各自的认证中间件。
+`Handler.Routes()` 返回包含认证中间件的路由声明，用于挂载和 OpenAPI 生成。
 `GET /auth/sessions` 要求 manager 实现 `auth.SessionLister`；`auth/jwt.Manager` 在 store 支持 session listing 时支持该接口。
 `DELETE /auth/sessions` 会吊销当前用户的 session；manager 支持清理时也会清理已保存的 session 记录。
 
@@ -135,8 +133,8 @@ spec, err := openapi.Generate(routeList, openapi.Options{
 ## 选项
 
 - `LoginAuthenticator`：必需的凭据校验入口
-- `BasePath`：相对于当前 router 挂载点的认证路由前缀；默认 `/auth`
-- `RefreshCookiePath`：浏览器可见的 refresh cookie 路径；默认等于 `BasePath`
+- `BasePath`：`*string` 类型的相对挂载目录；`nil` 默认使用 `"auth"`，`new("")` 选择根目录，`new("api/auth")` 选择 `/api/auth`。前导斜线、尾斜线和首尾空白会被拒绝。
+- `RefreshCookiePath`：浏览器可见的 refresh cookie 绝对路径；默认是 `/` 加上解析后的 `BasePath`
 - `CSRFCookiePath`：CSRF cookie 路径；默认 `/`
 - `RefreshCookieName`、`CSRFCookieName`、`CSRFHeaderName`：cookie 与 header 名称
 - `CookieSameSite`：可选的认证 cookie `SameSite` 覆盖项；零值保持基于 TLS / 代理推导的自动行为

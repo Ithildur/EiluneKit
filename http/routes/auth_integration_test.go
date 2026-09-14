@@ -5,6 +5,7 @@ import (
 	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Ithildur/EiluneKit/http/routes"
@@ -13,8 +14,10 @@ import (
 
 func TestMountApplicationAuthentication(t *testing.T) {
 	type principalKey struct{}
-	for _, prefix := range []string{"", "/api"} {
+	for _, prefix := range []string{"", "api"} {
 		t.Run(prefix, func(t *testing.T) {
+			urlPrefix := "/" + prefix
+			urlPrefix = strings.TrimSuffix(urlPrefix, "/")
 			authenticate := func(next http.Handler) http.Handler {
 				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					if cookie, err := r.Cookie("session"); err == nil && cookie.Value == "accepted" {
@@ -51,7 +54,7 @@ func TestMountApplicationAuthentication(t *testing.T) {
 			}
 			for _, token := range []string{"", "invalid", "accepted"} {
 				called = false
-				request := httptest.NewRequest(http.MethodGet, prefix+"/protected", nil)
+				request := httptest.NewRequest(http.MethodGet, urlPrefix+"/protected", nil)
 				request.Header.Set("X-Request-ID", "request-1")
 				request.AddCookie(&http.Cookie{Name: "session", Value: token})
 				recorder := httptest.NewRecorder()
@@ -76,7 +79,7 @@ func TestMountApplicationAuthentication(t *testing.T) {
 				}
 			}
 			recorder := httptest.NewRecorder()
-			mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, prefix+"/public", nil))
+			mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, urlPrefix+"/public", nil))
 			if recorder.Code != http.StatusNoContent {
 				t.Fatalf("public endpoint was guarded: %d", recorder.Code)
 			}

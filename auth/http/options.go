@@ -11,7 +11,7 @@ import (
 )
 
 const defaultMaxBodyBytes int64 = 1 << 20
-const defaultAuthBasePath = "/auth"
+const defaultAuthBasePath = "auth"
 
 // Options configures NewHandler.
 // Options 配置 NewHandler。
@@ -19,11 +19,11 @@ type Options struct {
 	// LoginAuthenticator validates login credentials.
 	// LoginAuthenticator 校验登录凭据。
 	LoginAuthenticator LoginAuthenticator
-	// BasePath is the auth route prefix.
-	// BasePath 是认证路由前缀。
-	BasePath string
-	// RefreshCookiePath defaults to BasePath when empty.
-	// RefreshCookiePath 为空时默认等于 BasePath。
+	// BasePath is a relative mount directory. Nil defaults to "auth"; new("") selects the root.
+	// BasePath 是相对挂载目录；nil 默认使用 "auth"，new("") 选择根目录。
+	BasePath *string
+	// RefreshCookiePath defaults to the absolute HTTP path for BasePath when empty.
+	// RefreshCookiePath 为空时默认使用 BasePath 对应的绝对 HTTP 路径。
 	RefreshCookiePath string
 	// CSRFCookiePath defaults to "/".
 	// CSRFCookiePath 默认为 "/"。
@@ -73,7 +73,7 @@ type Options struct {
 // DefaultOptions 返回默认 handler 选项。
 func DefaultOptions() Options {
 	return Options{
-		BasePath:          defaultAuthBasePath,
+		BasePath:          new(defaultAuthBasePath),
 		RefreshCookiePath: "",
 		CSRFCookiePath:    "/",
 		RefreshCookieName: authsession.DefaultRefreshCookieName,
@@ -88,8 +88,8 @@ func applyOptions(base, override Options) Options {
 	if override.LoginAuthenticator != nil {
 		base.LoginAuthenticator = override.LoginAuthenticator
 	}
-	if strings.TrimSpace(override.BasePath) != "" {
-		base.BasePath = override.BasePath
+	if override.BasePath != nil {
+		base.BasePath = new(*override.BasePath)
 	}
 	if strings.TrimSpace(override.RefreshCookiePath) != "" {
 		base.RefreshCookiePath = override.RefreshCookiePath
@@ -129,9 +129,8 @@ func applyOptions(base, override Options) Options {
 		base.Logger = override.Logger
 	}
 
-	base.BasePath = normalizePath(base.BasePath)
 	if strings.TrimSpace(base.RefreshCookiePath) == "" {
-		base.RefreshCookiePath = base.BasePath
+		base.RefreshCookiePath = "/" + *base.BasePath
 	} else {
 		base.RefreshCookiePath = normalizePath(base.RefreshCookiePath)
 	}

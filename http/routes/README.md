@@ -2,13 +2,37 @@
 
 `http/routes` keeps route metadata next to handlers and mounts the result on `chi`.
 
-## Recommended Path
+## Usage
 
-Use `routes.Blueprint` in normal application code. It keeps handlers, metadata, tags, and middleware in one place, and makes child route inclusion explicit.
+Use `routes.Blueprint` to declare handlers, metadata, tags, and middleware. Use `routes.Route` and `routes.Mount` when working directly with route slices or arbitrary `http.Handler` values.
 
-Use lower-level `routes.Route` and `routes.Mount` when routes are generated, adapted from another router, or when you need direct control over the route slice. `Blueprint` builds the same route data; it is not a second routing system.
+`Blueprint` methods take `path`, `summary`, a handler function or method value, then route options.
 
-`Blueprint` methods take `path`, `summary`, a handler function or method value directly, then route options. Go 1.27 generic methods check supported handler signatures at compile time while the stored `Route` remains a plain, non-generic value. Use lower-level `Route.Handler` when an adapter already returned an arbitrary `http.Handler`.
+## Paths
+
+Endpoint paths start with a single `/`: use `Get("/users", ...)`. The empty endpoint `""` selects the mount directory itself. Mount directories have neither leading nor trailing slashes: use `MountAt(router, "api")`. Surrounding whitespace is rejected for both.
+
+| Mount directory | Endpoint path | HTTP path |
+|---|---|---|
+| `""` | `""` | `/` |
+| `"api"` | `""` | `/api` |
+| `"api"` | `"/"` | `/api/` |
+| `"api"` | `"/users"` | `/api/users` |
+| `"api"` | `"/users/"` | `/api/users/` |
+
+`Route.Path` uses the same endpoint syntax. `RoutesAt("api")` and `WithPrefix("api", ...)` produce paths such as `/api/users`, ready for mounting with an empty directory and for document export. Violations of the slash and whitespace rules above cause Blueprint declaration/composition methods to panic and mount/export functions to return errors.
+
+Full chi route patterns are checked during mounting; chi's syntax validation panics on malformed patterns such as `/users/{id`. Blueprint declaration/composition and the `ExportJSON`/`ExportMarkdown` summary exports do not validate full route patterns.
+
+Multiple mounts may share a directory. Kit checks the batch and the target router's `Routes()` snapshot by HTTP method. Duplicate routes and wildcard conflicts panic before the batch is registered, with the conflicting paths in the message.
+
+- `/users/{id}/posts` conflicts with `/users/{name}/profile`: shared parameter positions must use the same name.
+- `/files/*` conflicts with `/files/download`, `/files/{name}`, or `/files/`; `/files` may be registered separately.
+- `/users/{id}` and `/users/me` may coexist, with the static path taking precedence; HTTP methods are checked independently.
+
+Paths retain chi syntax. Regex and parameter-delimiter branches follow chi's rules; regex normalization only applies chi's anchors and does not infer equivalence between different expressions.
+
+Register application endpoints through Kit to apply these checks. Direct chi registrations bypass them; chi's hidden `Mount` forwarding aliases are outside the check. Pass an existing subrouter to Kit when adding endpoints inside it.
 
 ## Blueprint
 
@@ -22,20 +46,6 @@ updater := routes.NewBlueprint(
 	routes.DefaultTags("updater"),
 	routes.DefaultAuth(routes.AuthRequired),
 	routes.DefaultMiddleware(bearer),
-)
-updater.Post(
-	"/refresh",
-	"Refresh updater state",
-	refresh,
-	routes.OperationID("refreshUpdater"),
-	routes.EmptyResponse(http.StatusNoContent, "Updater refreshed"),
-	routes.Security(routes.SecurityRequirement{
-		{
-			Name:   "BearerAuth",
-			Type:   routes.SecurityHTTP,
-			Scheme: "bearer",
-		},
-	}),
 )
 updater.Get(
 	"/remotes/{remoteID}",
@@ -59,14 +69,16 @@ updater.Get(
 )
 
 api := routes.NewBlueprint()
-api.Include("/updater", updater)
+api.Include("updater", updater)
 
-routeList := api.RoutesAt("/api")
+routeList := api.RoutesAt("api")
 err = routes.Mount(r, "", routeList)
 ```
 
-Handlers can accept up to 10 dynamic path values after `*http.Request`.
+Handlers can accept up to 15 dynamic path values after `*http.Request`.
 Dynamic path names must be unique in the final mounted route.
+
+Values come from `Request.PathValue` in final path order, including dynamic prefixes and `*`. Route middleware can override them with `Request.SetPathValue`, including an empty string.
 
 ```go
 func remote(w http.ResponseWriter, r *http.Request, remoteID string) {
@@ -74,13 +86,15 @@ func remote(w http.ResponseWriter, r *http.Request, remoteID string) {
 }
 ```
 
-`Blueprint.Routes()` returns owned `[]routes.Route` copies. Use `RoutesAt` when mounting below a prefix so mounting and contract generation consume the same final paths. Dynamic prefix parameters are added as required string path parameters unless the route already declares their metadata.
+`Blueprint.Routes()` and `RoutesAt()` return owned `[]routes.Route` copies. Pass the same final route list to mounting and contract generation. Dynamic prefix parameters default to required string path parameters; explicit metadata takes precedence.
+
+Build and mount Blueprints at startup, then leave routes and middleware configuration unchanged while serving. The same Blueprint can be mounted under different prefixes with independent parameter bindings. Pass required values explicitly to asynchronous tasks; do not access chi's route context or keep using `ResponseWriter` after routing returns.
 
 `AuthPublic`, `AuthOptional`, and `AuthRequired` are exported as route metadata. `Mount` also guards `AuthRequired` routes at runtime, so auth middleware must mark successful requests with `routes.WithAuthenticated`.
 
 ## Application Authentication
 
-Built-in `auth/http` and `auth/rbac/http` are optional. Route registration does not require their token managers, JWT claims, or principals. Applications retain their own login endpoints, session lifecycle, CSRF checks, authorization, and transaction boundaries.
+Authentication middleware can use application-owned sessions and principals or the optional `auth/http` and `auth/rbac/http` packages. The application owns resource authorization and session lifecycle.
 
 Supply a standard middleware and mark the request only after the application's authentication checks have succeeded:
 
@@ -102,19 +116,19 @@ api := routes.NewBlueprint(
 	routes.DefaultMiddleware(authenticate),
 )
 api.Get("/account", "Current account", accountHandler)
-err := routes.MountWithOptions(router, "", api.RoutesAt("/api"), routes.MountOptions{
+err := routes.MountWithOptions(router, "", api.RoutesAt("api"), routes.MountOptions{
 	Unauthorized: http.HandlerFunc(writeUnauthorized),
 })
 ```
 
-Here `sessions`, `withPrincipal`, and the response handlers belong to the application. `MountOptions.Unauthorized` controls the guard response when a required route is reached without the marker; it does not override responses already written by authentication middleware and cannot continue to the endpoint. Nil preserves the default JSON 401. Existing mount functions keep their default behavior.
+Here `sessions`, `withPrincipal`, and the response handlers belong to the application. `MountOptions.Unauthorized` handles required routes reached without an authentication marker. It cannot continue to the endpoint or override a response already written by authentication middleware. Nil uses the default JSON 401 response.
 
 `AuthPublic` and `AuthOptional` do not remove attached middleware. Mount login endpoints separately or use a public blueprint without required-auth middleware. `AuthRequired` proves authentication only; resource authorization stays with the application. OpenAPI security metadata must describe the actual cookie/header/Bearer scheme independently.
 
-## Lower Level
+## Route Slices
 
 ```go
-routes.Mount(r, "/api", []routes.Route{
+routes.Mount(r, "api", []routes.Route{
 	{
 		Method:      http.MethodGet,
 		Path:        "/status",
@@ -136,7 +150,7 @@ routes.Mount(r, "/api", []routes.Route{
 
 ## OpenAPI 3.1
 
-The optional `tools/openapi` package generates deterministic, validated OpenAPI 3.1 JSON from final route metadata:
+The optional `tools/openapi` package generates deterministic, validated OpenAPI 3.1 JSON from final route metadata. It does not validate HTTP requests or responses at runtime.
 
 ```go
 spec, err := openapi.Generate(routeList, openapi.Options{
@@ -168,8 +182,4 @@ routes.Respond("204", routes.Response{
 
 Header names must be valid HTTP tokens and unique ignoring case. Declare `Content-Type` through `Response.Content`, not `Headers`. Header declarations describe the contract; handlers remain responsible for writing the actual headers.
 
-Feed the resulting JSON to any OpenAPI 3.1-compatible TypeScript type and client generator. Kit does not bundle a TypeScript generator.
-
-Handlers remain ordinary `net/http` handlers. Mounting routes does not perform runtime schema validation; generation and document validation happen only when `openapi.Generate` is called.
-
-`routes.ExportJSON` and `routes.ExportMarkdown` generate compact route summaries. OpenAPI output is generated by `openapi.Generate`.
+Feed the resulting JSON to an OpenAPI 3.1-compatible TypeScript type and client generator. Use `routes.ExportJSON` or `routes.ExportMarkdown` for compact route summaries.

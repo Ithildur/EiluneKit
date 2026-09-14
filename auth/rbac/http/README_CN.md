@@ -2,11 +2,9 @@
 
 `auth/rbac/http` 将 `auth/rbac.Service` 适配为 JSON bearer 路由。
 
-它用于需要多用户、角色检查、scope 检查或 opaque API token 的应用。该包只暴露传输层；认证流程仍由 `auth/rbac` 负责，用户存储、密码 hash、角色分配和 token 持久化仍由应用负责。
+它用于需要多用户、角色检查、scope 检查或 opaque API token 的应用。认证流程由 `auth/rbac` 负责；用户存储、密码 hash、角色分配和 token 持久化由应用负责。
 
-默认路由挂在 `/auth` 下：
-
-下表是路由概览。请求、响应、状态码、参数和 security 契约从 `Handler.Routes()` 生成 OpenAPI。
+默认 HTTP 路径：
 
 | 路由 | 用途 |
 |---|---|
@@ -29,6 +27,8 @@ spec, err := openapi.Generate(routeList, openapi.Options{
 })
 ```
 
+`Options.BasePath` 是 `*string` 类型的相对挂载目录：`nil` 默认使用 `"auth"`，`new("")` 选择根目录，`new("api/auth")` 选择 `/api/auth`。前导斜线、尾斜线和首尾空白会被拒绝。
+
 ## 推荐组合
 
 - 使用应用自己的 `UserStore` 和 `PasswordVerifier` 构造 `auth/rbac.Service`
@@ -46,6 +46,6 @@ r.With(authz.RequireRole("admin")).Get("/admin", adminHandler)
 r.With(authz.RequireScope("vm:read")).Get("/vms", listVMs)
 ```
 
-角色层级是应用策略。通过 `Options.RolePolicy` 或 `NewMiddleware(service, policy)` 传入；本包不知道 `admin`、`operator`、`viewer`、`vm_user` 这些业务角色。
+通过 `Options.RolePolicy` 或 `NewMiddleware(service, policy)` 配置角色层级。
 
 admin-only 应用只有一个共享凭据且需要 cookie refresh session 时，使用 `auth/http`。

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Ithildur/EiluneKit/http/middleware"
 	"github.com/Ithildur/EiluneKit/http/routes"
 
 	"github.com/go-chi/chi/v5"
@@ -26,7 +27,7 @@ func TestBlueprintIncludesChildRoutes(t *testing.T) {
 	)
 
 	parent := routes.NewBlueprint()
-	parent.Include("/updater", child, routes.IncludeTags("updater"))
+	parent.Include("updater", child, routes.IncludeTags("updater"))
 
 	payload, err := parent.ExportJSON()
 	if err != nil {
@@ -71,16 +72,16 @@ func TestBlueprintIncludesChildRoutes(t *testing.T) {
 	}
 }
 
-func TestBlueprintRoutesAtNormalizesPathBeforePrefix(t *testing.T) {
+func TestBlueprintRoutesAtComposesPaths(t *testing.T) {
 	blueprint := routes.NewBlueprint()
-	blueprint.Add(routes.Route{Path: " users "})
+	blueprint.Add(routes.Route{Path: "/users"})
 
 	for _, test := range []struct {
 		prefix string
 		want   string
 	}{
-		{prefix: " /api/ ", want: "/api/users"},
-		{prefix: "/", want: "/users"},
+		{prefix: "api", want: "/api/users"},
+		{prefix: "", want: "/users"},
 	} {
 		routeList := blueprint.RoutesAt(test.prefix)
 		if got := routeList[0].Path; got != test.want {
@@ -88,180 +89,10 @@ func TestBlueprintRoutesAtNormalizesPathBeforePrefix(t *testing.T) {
 		}
 	}
 
-	routeList := blueprint.RoutesAt("/tenants/{tenantID}")
+	routeList := blueprint.RoutesAt("tenants/{tenantID}")
 	params := routeList[0].Parameters
 	if len(params) != 1 || params[0].Name != "tenantID" || params[0].In != routes.ParameterPath || !params[0].Required {
 		t.Fatalf("unexpected dynamic prefix parameters: %#v", params)
-	}
-}
-
-func TestBlueprintHandlerReadsDynamicPath(t *testing.T) {
-	blueprint := routes.NewBlueprint()
-	blueprint.Get(
-		"/remotes/{remoteID}",
-		"Get remote",
-		func(w http.ResponseWriter, r *http.Request, remoteID string) {
-			if got, want := remoteID, "origin"; got != want {
-				t.Fatalf("expected remoteID %q, got %q", want, got)
-			}
-			w.WriteHeader(http.StatusNoContent)
-		},
-	)
-
-	r := chi.NewRouter()
-	if err := blueprint.Mount(r); err != nil {
-		t.Fatalf("mount: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/remotes/origin", nil)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
-	}
-}
-
-func TestBlueprintHandlerReadsRegexpDynamicPath(t *testing.T) {
-	blueprint := routes.NewBlueprint()
-	blueprint.Get(
-		"/remotes/{remoteID:[a-z]{2}[0-9]{3}}",
-		"Get remote",
-		func(w http.ResponseWriter, r *http.Request, remoteID string) {
-			if got, want := remoteID, "ab123"; got != want {
-				t.Fatalf("expected remoteID %q, got %q", want, got)
-			}
-			w.WriteHeader(http.StatusNoContent)
-		},
-	)
-
-	r := chi.NewRouter()
-	if err := blueprint.Mount(r); err != nil {
-		t.Fatalf("mount: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/remotes/ab123", nil)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
-	}
-}
-
-func TestBlueprintHandlerReadsWildcardDynamicPath(t *testing.T) {
-	blueprint := routes.NewBlueprint()
-	blueprint.Get(
-		"/files/*",
-		"Get file",
-		func(w http.ResponseWriter, r *http.Request, path string) {
-			if got, want := path, "a/b/c.txt"; got != want {
-				t.Fatalf("expected path %q, got %q", want, got)
-			}
-			w.WriteHeader(http.StatusNoContent)
-		},
-	)
-
-	r := chi.NewRouter()
-	if err := blueprint.Mount(r); err != nil {
-		t.Fatalf("mount: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/files/a/b/c.txt", nil)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
-	}
-}
-
-func TestBlueprintHandlerReadsPrefixedDynamicPath(t *testing.T) {
-	blueprint := routes.NewBlueprint()
-	blueprint.Get(
-		"/remotes/{remoteID}",
-		"Get remote",
-		func(w http.ResponseWriter, r *http.Request, tenantID, remoteID string) {
-			if got, want := tenantID, "acme"; got != want {
-				t.Fatalf("expected tenantID %q, got %q", want, got)
-			}
-			if got, want := remoteID, "origin"; got != want {
-				t.Fatalf("expected remoteID %q, got %q", want, got)
-			}
-			w.WriteHeader(http.StatusNoContent)
-		},
-	)
-
-	r := chi.NewRouter()
-	if err := blueprint.MountAt(r, "/tenants/{tenantID}"); err != nil {
-		t.Fatalf("mount: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/tenants/acme/remotes/origin", nil)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
-	}
-}
-
-func TestBlueprintHandlerReadsTenDynamicPathParams(t *testing.T) {
-	blueprint := routes.NewBlueprint()
-	blueprint.Get(
-		"/{a}/{b}/{c}/{d}/{e}/{f}/{g}/{h}/{i}/{j}",
-		"Get nested resource",
-		func(
-			w http.ResponseWriter,
-			r *http.Request,
-			a, b, c, d, e, f, g, h, i, j string,
-		) {
-			got := []string{a, b, c, d, e, f, g, h, i, j}
-			want := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j"}
-			if !reflect.DeepEqual(got, want) {
-				t.Fatalf("expected path params %#v, got %#v", want, got)
-			}
-			w.WriteHeader(http.StatusNoContent)
-		},
-	)
-
-	r := chi.NewRouter()
-	if err := blueprint.Mount(r); err != nil {
-		t.Fatalf("mount: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/a/b/c/d/e/f/g/h/i/j", nil)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
-	}
-}
-
-func TestBlueprintHandlerRejectsMismatchedDynamicPath(t *testing.T) {
-	blueprint := routes.NewBlueprint()
-	blueprint.Get(
-		"/remotes/{remoteID}",
-		"Get remote",
-		func(w http.ResponseWriter, r *http.Request, tenantID, remoteID string) {},
-	)
-
-	err := blueprint.Mount(chi.NewRouter())
-	if err == nil {
-		t.Fatal("expected path params mismatch error")
-	}
-}
-
-func TestBlueprintHandlerRejectsDuplicateDynamicPathNames(t *testing.T) {
-	blueprint := routes.NewBlueprint()
-	blueprint.Get(
-		"/remotes/{id}",
-		"Get remote",
-		func(w http.ResponseWriter, r *http.Request, tenantID, remoteID string) {},
-	)
-
-	err := blueprint.MountAt(chi.NewRouter(), "/tenants/{id}")
-	if err == nil {
-		t.Fatal("expected duplicate path param error")
-	}
-	if !strings.Contains(err.Error(), `duplicate path param "id"`) {
-		t.Fatalf("expected duplicate path param error, got %v", err)
 	}
 }
 
@@ -319,7 +150,7 @@ func TestBlueprintDefaults(t *testing.T) {
 	}
 
 	r := chi.NewRouter()
-	if err := blueprint.MountAt(r, "/api"); err != nil {
+	if err := blueprint.MountAt(r, "api"); err != nil {
 		t.Fatalf("mount: %v", err)
 	}
 
@@ -356,7 +187,7 @@ func TestBlueprintIncludeMiddlewarePrependsChildRoutes(t *testing.T) {
 	}, routes.Use(routeMW))
 
 	parent := routes.NewBlueprint()
-	parent.Include("/child", child, routes.IncludeMiddleware(includeMW))
+	parent.Include("child", child, routes.IncludeMiddleware(includeMW))
 
 	exportedRoutes := parent.Routes()
 	if got, want := len(exportedRoutes), 1; got != want {
@@ -387,7 +218,7 @@ func TestBlueprintIncludeAuthOverridesChildRoutes(t *testing.T) {
 	child.Get("/public", "", func(w http.ResponseWriter, r *http.Request) {}, routes.Auth(routes.AuthPublic))
 
 	parent := routes.NewBlueprint()
-	parent.Include("/child", child, routes.IncludeAuth(routes.AuthRequired))
+	parent.Include("child", child, routes.IncludeAuth(routes.AuthRequired))
 
 	exportedRoutes := parent.Routes()
 	if got, want := len(exportedRoutes), 1; got != want {
@@ -401,10 +232,10 @@ func TestBlueprintIncludeAuthOverridesChildRoutes(t *testing.T) {
 func TestMountRequiresAuthenticatedContext(t *testing.T) {
 	called := false
 	r := chi.NewRouter()
-	err := routes.Mount(r, "/api", []routes.Route{
+	err := routes.Mount(r, "api", []routes.Route{
 		{
 			Method: "get",
-			Path:   "users",
+			Path:   "/users",
 			Auth:   routes.AuthRequired,
 			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				called = true
@@ -428,28 +259,103 @@ func TestMountRequiresAuthenticatedContext(t *testing.T) {
 	}
 }
 
-func TestMountRejectsDuplicateNormalizedRoutes(t *testing.T) {
-	r := chi.NewRouter()
-	err := routes.Mount(r, "", []routes.Route{
-		{Method: "get", Path: "users", Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})},
-		{Method: "GET", Path: "/users", Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})},
-	})
-	if err == nil {
-		t.Fatal("expected duplicate route error")
+func TestMountUsesFinalPaths(t *testing.T) {
+	b := routes.NewBlueprint()
+	b.Get("", "", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusAccepted) })
+	b.Get("/", "", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	b.Get("/items/{id}", "", func(w http.ResponseWriter, r *http.Request, id string) { w.WriteHeader(http.StatusNoContent) })
+	for _, mount := range []string{"prefix", "expanded", "include", "router"} {
+		t.Run(mount, func(t *testing.T) {
+			mux := chi.NewRouter()
+			mux.MethodNotAllowed(middleware.MethodNotAllowedResponder(mux))
+			var err error
+			switch mount {
+			case "prefix":
+				err = b.MountAt(mux, "api")
+			case "expanded":
+				err = routes.Mount(mux, "", b.RoutesAt("api"))
+			case "include":
+				parent := routes.NewBlueprint()
+				parent.Include("", b)
+				err = parent.MountAt(mux, "api")
+			case "router":
+				parent := routes.NewRouter()
+				parent.Include("", b.Routes())
+				err = parent.Mount(mux, "api")
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Separate mounting calls may share a prefix.
+			// 独立的挂载调用可以共享前缀。
+			if err := routes.Mount(mux, "api", []routes.Route{{Method: http.MethodGet, Path: "/other", Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })}}); err != nil {
+				t.Fatal(err)
+			}
+			for _, test := range []struct {
+				method, path string
+				status       int
+			}{
+				{http.MethodGet, "/api", http.StatusAccepted},
+				{http.MethodGet, "/api/", http.StatusNoContent},
+				{http.MethodGet, "/api/items/42", http.StatusNoContent},
+				{http.MethodGet, "/api/other", http.StatusNoContent},
+				{http.MethodGet, "/api/missing", http.StatusNotFound},
+				{http.MethodPost, "/api/items/42", http.StatusMethodNotAllowed},
+				{http.MethodHead, "/api/items/42", http.StatusMethodNotAllowed},
+			} {
+				w := httptest.NewRecorder()
+				mux.ServeHTTP(w, httptest.NewRequest(test.method, test.path, nil))
+				if w.Code != test.status {
+					t.Fatalf("%s %s: %d; want %d", test.method, test.path, w.Code, test.status)
+				}
+				if test.status == http.StatusMethodNotAllowed && strings.Join(w.Header().Values("Allow"), ",") != "GET" {
+					t.Fatalf("unexpected Allow: %v", w.Header().Values("Allow"))
+				}
+			}
+		})
 	}
 }
 
-func TestMountRejectsUnknownAuthRequirement(t *testing.T) {
-	err := routes.Mount(chi.NewRouter(), "", []routes.Route{
-		{
-			Method:  http.MethodGet,
-			Path:    "/private",
-			Auth:    routes.AuthRequirement("require"),
-			Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
-		},
+func TestMountNormalizesEmptyFinalPath(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	for _, path := range []string{"", "/"} {
+		mux := chi.NewRouter()
+		if err := routes.Mount(mux, "", []routes.Route{{Method: http.MethodGet, Path: path, Handler: handler}}); err != nil {
+			t.Fatal(err)
+		}
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+		if w.Code != http.StatusNoContent {
+			t.Fatalf("path %q: status %d", path, w.Code)
+		}
+	}
+	mustPanic(t, func() {
+		_ = routes.Mount(chi.NewRouter(), "", []routes.Route{
+			{Method: http.MethodGet, Path: "", Handler: handler},
+			{Method: http.MethodGet, Path: "/", Handler: handler},
+		})
 	})
-	if err == nil || !strings.Contains(err.Error(), "unsupported auth requirement") {
-		t.Fatalf("expected unsupported auth requirement error, got %v", err)
+}
+
+func TestBlueprintIncludeOwnsRoutes(t *testing.T) {
+	child := routes.NewBlueprint()
+	child.Get("/items", "", func(http.ResponseWriter, *http.Request) {}, routes.Tags("child"), routes.Auth(routes.AuthOptional))
+	parent := routes.NewBlueprint(routes.DefaultTags("parent"))
+	parent.Include("first", child, routes.IncludeTags("included"), routes.IncludeAuth(routes.AuthRequired))
+	parent.Include("second", child)
+	got := parent.Routes()
+	if got[0].Path != "/first/items" || got[0].Auth != routes.AuthRequired || !reflect.DeepEqual(got[0].Tags, []string{"parent", "child", "included"}) {
+		t.Fatalf("unexpected first route: %#v", got[0])
+	}
+	if got[1].Path != "/second/items" || got[1].Auth != routes.AuthOptional || !reflect.DeepEqual(got[1].Tags, []string{"parent", "child"}) {
+		t.Fatalf("unexpected second route: %#v", got[1])
+	}
+	if original := child.Routes()[0]; original.Path != "/items" || original.Auth != routes.AuthOptional || !reflect.DeepEqual(original.Tags, []string{"child"}) {
+		t.Fatalf("child changed: %#v", original)
+	}
+	parent.Include("copy", parent)
+	if len(parent.Routes()) != 4 {
+		t.Fatal("self-include did not snapshot existing routes")
 	}
 }
 
@@ -464,7 +370,7 @@ func TestExportJSONSortsRoutesAndTags(t *testing.T) {
 		},
 		{
 			Method:  "get",
-			Path:    "a",
+			Path:    "/a",
 			Summary: "list",
 		},
 	})
@@ -518,34 +424,6 @@ func TestExportMarkdownIncludesAuthRequirement(t *testing.T) {
 	}
 }
 
-func TestBlueprintRejectsNilHandlerFunctions(t *testing.T) {
-	b := routes.NewBlueprint()
-	var fn func(http.ResponseWriter, *http.Request)
-	mustPanic(t, func() {
-		b.Get("/", "", fn)
-	})
-
-	var paramFn func(http.ResponseWriter, *http.Request, string)
-	mustPanic(t, func() {
-		b.Get("/{id}", "", paramFn)
-	})
-}
-
-func TestMountRejectsTypedNilHandler(t *testing.T) {
-	var h *typedNilHandler
-
-	err := routes.Mount(chi.NewRouter(), "", []routes.Route{
-		{
-			Method:  http.MethodGet,
-			Path:    "/health",
-			Handler: h,
-		},
-	})
-	if err == nil {
-		t.Fatal("expected nil handler error")
-	}
-}
-
 func TestRouteCloneOwnsContractMetadata(t *testing.T) {
 	original := routes.Route{
 		Parameters: []routes.Parameter{{Name: "id"}},
@@ -593,7 +471,3 @@ func mustPanic(t *testing.T, fn func()) {
 	}()
 	fn()
 }
-
-type typedNilHandler struct{}
-
-func (*typedNilHandler) ServeHTTP(http.ResponseWriter, *http.Request) {}

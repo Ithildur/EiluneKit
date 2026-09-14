@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Ithildur/EiluneKit/internal/routepath"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -40,7 +41,10 @@ const (
 // Route 定义 HTTP 端点。
 // 使用 Mount 挂载路由。
 type Route struct {
-	Method      string
+	Method string
+	// Path starts with a single slash, or is empty to select the mount directory itself.
+	// A lone slash selects its trailing-slash endpoint.
+	// Path 以单个斜线开头，或用空字符串选择挂载目录本身；单独的斜线选择其带尾斜线端点。
 	Path        string
 	Summary     string
 	Tags        []string
@@ -74,9 +78,13 @@ func (r Route) Clone() Route {
 }
 
 // Mount registers routes on r.
-// Mount does not mutate routes.
+// Prefixes are expanded before registration; Mount does not create subrouters or mutate routes.
+// Prefix must be relative without a trailing slash; empty selects the current directory.
+// Conflicts within the batch or with r.Routes() panic before registration; see [MountWithOptions].
 // Mount 在 r 上注册路由。
-// Mount 不会修改 routes。
+// 前缀在注册前展开；Mount 不会创建子路由或修改 routes。
+// prefix 必须是无尾斜线的相对目录；空字符串选择当前目录。
+// 本批路由内部或与 r.Routes() 的冲突会在注册前 panic；参见 [MountWithOptions]。
 func Mount(r chi.Router, prefix string, routes []Route) error {
 	return MountWithOptions(r, prefix, routes, MountOptions{})
 }
@@ -93,32 +101,29 @@ type MountOptions struct {
 
 // MountWithOptions registers routes with an application-supplied authentication failure response.
 // Route middleware must still mark successful authentication with WithAuthenticated.
+// Registration conflicts panic, as in [Mount]. Direct chi registrations bypass this check;
+// chi's hidden Mount forwarding aliases are not included in r.Routes().
 // MountWithOptions 注册路由并允许应用提供认证失败响应。
 // 路由中间件仍须在认证成功后调用 WithAuthenticated。
+// 注册冲突与 [Mount] 一样会 panic。直接调用 chi 注册会绕过检查；
+// r.Routes() 不包含 chi 隐藏的 Mount 转发别名。
 func MountWithOptions(r chi.Router, prefix string, routes []Route, opts MountOptions) error {
 	if r == nil {
 		return fmt.Errorf("routes: nil chi.Router")
 	}
 
-	p := cleanPrefix(prefix)
-	if p == "" {
-		return mountRoutesAt(r, "", routes, opts)
+	if err := routepath.ValidatePrefix(prefix); err != nil {
+		return fmt.Errorf("routes: %w", err)
 	}
-
-	var mountErr error
-	r.Route(p, func(r chi.Router) {
-		if err := mountRoutesAt(r, p, routes, opts); err != nil && mountErr == nil {
-			mountErr = err
-		}
-	})
-	return mountErr
-}
-
-func mountRoutesAt(r chi.Router, prefix string, routes []Route, opts MountOptions) error {
-	seen := make(map[string]struct{}, len(routes))
+	probe := chi.NewRouter()
+	index := newRouteIndex(probe, r.Routes())
+	prepared := make([]Route, len(routes))
 
 	for i, raw := range routes {
-		method, path, err := normalizeRoute(raw.Method, raw.Path)
+		if err := routepath.Validate(raw.Path); err != nil {
+			return fmt.Errorf("routes: route[%d]: %w", i, err)
+		}
+		method, path, err := normalizeRoute(raw.Method, routepath.Join(prefix, raw.Path))
 		if err != nil {
 			return fmt.Errorf("routes: route[%d]: %w", i, err)
 		}
@@ -126,32 +131,41 @@ func mountRoutesAt(r chi.Router, prefix string, routes []Route, opts MountOption
 			return fmt.Errorf("routes: route[%d] %s %s: nil handler", i, method, path)
 		}
 
-		key := method + " " + path
-		if _, ok := seen[key]; ok {
-			return fmt.Errorf("routes: route[%d] duplicate: %s", i, key)
-		}
-		seen[key] = struct{}{}
-
-		fullPath := joinPath(prefix, path)
-		handler, err := bindPathHandler(raw.Handler, fullPath)
-		if err != nil {
-			return fmt.Errorf("routes: route[%d] %s %s: %w", i, method, fullPath, err)
+		handler := raw.Handler
+		if params, ok := handler.(*paramHandler); ok {
+			handler, err = params.bindPath(path)
+			if err != nil {
+				return fmt.Errorf("routes: route[%d] %s %s: %w", i, method, path, err)
+			}
 		}
 		switch auth := effectiveAuth(raw.Auth); auth {
 		case AuthPublic, AuthOptional:
 		case AuthRequired:
 			handler = requireAuthenticated(handler, opts.Unauthorized)
 		default:
-			return fmt.Errorf("routes: route[%d] %s %s: unsupported auth requirement %q", i, method, fullPath, auth)
+			return fmt.Errorf("routes: route[%d] %s %s: unsupported auth requirement %q", i, method, path, auth)
 		}
 
-		for _, middleware := range slices.Backward(raw.Middleware) {
+		// Let chi validate its method and pattern syntax without touching the live router.
+		// 让 chi 校验其方法和模式语法，避免修改实际路由器。
+		probe.Method(method, path, handler)
+		if err := index.add(method, path); err != nil {
+			panic(fmt.Sprintf("routes: route[%d] %s %s: %v", i, method, path, err))
+		}
+		prepared[i] = raw
+		prepared[i].Method, prepared[i].Path, prepared[i].Handler = method, path, handler
+	}
+
+	for _, rt := range prepared {
+		handler := rt.Handler
+
+		for _, middleware := range slices.Backward(rt.Middleware) {
 			if middleware != nil {
 				handler = middleware(handler)
 			}
 		}
 
-		r.Method(method, path, handler)
+		r.Method(rt.Method, rt.Path, handler)
 	}
 	return nil
 }
@@ -162,14 +176,8 @@ func normalizeRoute(methodRaw, pathRaw string) (string, string, error) {
 		return "", "", fmt.Errorf("empty method for path=%q", strings.TrimSpace(pathRaw))
 	}
 
-	path := strings.TrimSpace(pathRaw)
-	if path == "" {
-		return method, "/", nil
-	}
-	if strings.HasPrefix(path, "/") {
-		return method, path, nil
-	}
-	return method, "/" + path, nil
+	path, err := routepath.Pattern(pathRaw)
+	return method, path, err
 }
 
 type exportRoute struct {
@@ -183,7 +191,10 @@ type exportRoute struct {
 // ExportJSON returns route metadata as JSON.
 // ExportJSON 返回 JSON 路由元数据。
 func ExportJSON(routes []Route) ([]byte, error) {
-	exported := buildExportRoutes(routes)
+	exported, err := buildExportRoutes(routes)
+	if err != nil {
+		return nil, err
+	}
 	sortExportRoutes(exported)
 	return json.Marshal(exported)
 }
@@ -196,7 +207,10 @@ func ExportMarkdown(routes []Route) (string, error) {
 		"|---|---|---|---|---|",
 	}
 
-	exported := buildExportRoutes(routes)
+	exported, err := buildExportRoutes(routes)
+	if err != nil {
+		return "", err
+	}
 	sortExportRoutes(exported)
 
 	for _, rt := range exported {
@@ -230,21 +244,30 @@ func sortExportRoutes(exported []exportRoute) {
 }
 
 // WithPrefix returns routes with prefix applied.
+// Empty paths add no suffix; slash paths preserve their trailing slash.
 // Dynamic prefix parameters default to required string path parameters.
 // Existing path parameter metadata takes precedence.
+// Non-empty paths start with a slash. Invalid path or prefix syntax panics.
 // WithPrefix 返回添加 prefix 后的路由副本。
+// 空 path 不添加后缀；斜线路径保留尾斜线。
 // 动态前缀参数默认成为必填的 string path 参数。
 // 已有的 path 参数元数据优先。
+// 非空路径以斜线开头；路径或前缀语法无效时 panic。
 func WithPrefix(prefix string, routes []Route) []Route {
+	if err := routepath.ValidatePrefix(prefix); err != nil {
+		panic("routes: " + err.Error())
+	}
 	if len(routes) == 0 {
 		return nil
 	}
 
 	out := cloneRoutes(routes)
-	p := cleanPrefix(prefix)
 	for i := range out {
-		out[i].Path = joinPath(p, out[i].Path)
-		out[i].Parameters = withPrefixParameters(p, out[i].Parameters)
+		if err := routepath.Validate(out[i].Path); err != nil {
+			panic("routes: " + err.Error())
+		}
+		out[i].Path = routepath.Join(prefix, out[i].Path)
+		out[i].Parameters = withPrefixParameters(prefix, out[i].Parameters)
 	}
 	return out
 }
@@ -281,32 +304,6 @@ func withPrefixParameters(prefix string, params []Parameter) []Parameter {
 	return append(inferred, params...)
 }
 
-func joinPath(prefix, path string) string {
-	path = strings.TrimSpace(path)
-	if path == "" || path == "/" {
-		if prefix == "" {
-			return "/"
-		}
-		return prefix
-	}
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-	return prefix + path
-}
-
-func cleanPrefix(prefix string) string {
-	p := strings.TrimSpace(prefix)
-	if p == "" || p == "/" {
-		return ""
-	}
-	p = strings.TrimSuffix(p, "/")
-	if !strings.HasPrefix(p, "/") {
-		p = "/" + p
-	}
-	return p
-}
-
 func sanitizeMarkdownCell(s string) string {
 	if s == "" {
 		return s
@@ -317,29 +314,22 @@ func sanitizeMarkdownCell(s string) string {
 	return strings.ReplaceAll(s, "|", "\\|")
 }
 
-func buildExportRoutes(routes []Route) []exportRoute {
+func buildExportRoutes(routes []Route) ([]exportRoute, error) {
 	exported := make([]exportRoute, 0, len(routes))
-	for _, raw := range routes {
+	for i, raw := range routes {
+		path, err := routepath.Pattern(raw.Path)
+		if err != nil {
+			return nil, fmt.Errorf("routes: route[%d]: %w", i, err)
+		}
 		exported = append(exported, exportRoute{
 			Method:  strings.ToUpper(strings.TrimSpace(raw.Method)),
-			Path:    normalizePathForExport(raw.Path),
+			Path:    path,
 			Summary: raw.Summary,
 			Tags:    append([]string(nil), raw.Tags...),
 			Auth:    effectiveAuth(raw.Auth),
 		})
 	}
-	return exported
-}
-
-func normalizePathForExport(pathRaw string) string {
-	p := strings.TrimSpace(pathRaw)
-	if p == "" {
-		return "/"
-	}
-	if strings.HasPrefix(p, "/") {
-		return p
-	}
-	return "/" + p
+	return exported, nil
 }
 
 func effectiveAuth(auth AuthRequirement) AuthRequirement {

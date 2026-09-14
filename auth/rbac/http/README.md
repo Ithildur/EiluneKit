@@ -2,11 +2,9 @@
 
 `auth/rbac/http` adapts `auth/rbac.Service` to JSON bearer routes.
 
-Use it for applications that need multiple users, role checks, scope checks, or opaque API tokens. It exposes the transport layer only; `auth/rbac` still owns the auth flow and the application still owns user storage, password hashing, role assignment, and token persistence.
+Use it for applications that need multiple users, role checks, scope checks, or opaque API tokens. `auth/rbac` owns the authentication flow; the application owns user storage, password hashing, role assignment, and token persistence.
 
-Default routes under `/auth`:
-
-The table below is a route overview. Generate OpenAPI from `Handler.Routes()` for the request, response, status, parameter, and security contract.
+Default HTTP paths:
 
 | Route | Purpose |
 |---|---|
@@ -29,6 +27,8 @@ spec, err := openapi.Generate(routeList, openapi.Options{
 })
 ```
 
+`Options.BasePath` is a `*string` relative mount directory: `nil` defaults to `"auth"`, `new("")` selects the root, and `new("api/auth")` selects `/api/auth`. Leading/trailing slashes and surrounding whitespace are rejected.
+
 ## Recommended Stack
 
 - `auth/rbac.Service` with application `UserStore` and `PasswordVerifier`
@@ -46,6 +46,6 @@ r.With(authz.RequireRole("admin")).Get("/admin", adminHandler)
 r.With(authz.RequireScope("vm:read")).Get("/vms", listVMs)
 ```
 
-Role hierarchy is application policy. Pass `Options.RolePolicy` or `NewMiddleware(service, policy)`; this package does not know roles such as `admin`, `operator`, `viewer`, or `vm_user`.
+Configure role hierarchy with `Options.RolePolicy` or `NewMiddleware(service, policy)`.
 
 Use `auth/http` instead for admin-only applications that only need one shared credential and cookie-backed refresh sessions.

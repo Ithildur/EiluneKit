@@ -16,6 +16,7 @@ import (
 	"unicode"
 
 	"github.com/Ithildur/EiluneKit/http/routes"
+	"github.com/Ithildur/EiluneKit/internal/routepath"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/invopop/jsonschema"
@@ -38,9 +39,9 @@ type Options struct {
 }
 
 // Generate returns validated OpenAPI 3.1 JSON for routeList.
-// Route paths must include their final mount prefixes.
+// Route paths must include their final mount directories and start with a slash unless empty.
 // Generate 返回 routeList 对应且已通过校验的 OpenAPI 3.1 JSON。
-// 路由 path 必须包含最终挂载前缀。
+// 路由 path 必须包含最终挂载目录；非空路径必须以斜线开头。
 func Generate(routeList []routes.Route, opts Options) ([]byte, error) {
 	opts.Title = strings.TrimSpace(opts.Title)
 	if opts.Title == "" {
@@ -504,11 +505,9 @@ func normalizeMethod(raw string) (string, error) {
 }
 
 func normalizePath(raw string) (string, map[string]struct{}, error) {
-	path := strings.TrimSpace(raw)
-	if path == "" {
-		path = "/"
-	} else if !strings.HasPrefix(path, "/") {
-		path = "/" + path
+	path, err := routepath.Pattern(raw)
+	if err != nil {
+		return "", nil, err
 	}
 
 	params := make(map[string]struct{})

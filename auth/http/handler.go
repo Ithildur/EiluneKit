@@ -19,6 +19,7 @@ import (
 	"github.com/Ithildur/EiluneKit/http/middleware"
 	"github.com/Ithildur/EiluneKit/http/response"
 	"github.com/Ithildur/EiluneKit/http/routes"
+	"github.com/Ithildur/EiluneKit/internal/routepath"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -45,6 +46,9 @@ const eventRevokeTimeout = 5 * time.Second
 func NewHandler(manager TokenManager, opts Options) (*Handler, error) {
 	effective := DefaultOptions()
 	effective = applyOptions(effective, opts)
+	if err := routepath.ValidatePrefix(*effective.BasePath); err != nil {
+		return nil, fmt.Errorf("authhttp: BasePath: %w", err)
+	}
 	service, err := auth.New(manager, effective.LoginAuthenticator)
 	if err != nil {
 		return nil, err
@@ -178,7 +182,7 @@ func (h *Handler) Routes() []routes.Route {
 		stdhttp.StatusServiceUnavailable,
 	))
 	sessions.Get(
-		"/",
+		"",
 		"List sessions",
 		h.handleListSessions,
 		listSessionsOpts...,
@@ -206,7 +210,7 @@ func (h *Handler) Routes() []routes.Route {
 		stdhttp.StatusServiceUnavailable,
 	))
 	sessions.Delete(
-		"/",
+		"",
 		"Revoke all sessions for current user",
 		h.handleDeleteAllSessions,
 		revokeAllOpts...,
@@ -232,10 +236,10 @@ func (h *Handler) Routes() []routes.Route {
 		h.handleDeleteSession,
 		revokeSessionOpts...,
 	)
-	authRoutes.Include("/sessions", sessions)
+	authRoutes.Include("sessions", sessions)
 
 	root := routes.NewBlueprint()
-	root.Include(opts.BasePath, authRoutes)
+	root.Include(*opts.BasePath, authRoutes)
 	return root.Routes()
 }
 

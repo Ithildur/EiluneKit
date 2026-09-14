@@ -478,7 +478,7 @@ func TestRegisterRejectsNilHandler(t *testing.T) {
 func TestRegisterSupportsDynamicAuthBasePath(t *testing.T) {
 	manager := authenticatedManager()
 	opts := testOptions(stubAuthenticator("admin", "secret", "user-1"))
-	opts.BasePath = "/tenants/{tenantID}/auth"
+	opts.BasePath = new("tenants/{tenantID}/auth")
 	r := mustNewTestRouter(t, manager, opts)
 
 	rec := serve(r, http.MethodDelete, "/tenants/acme/auth/sessions/sid-2", "", func(req *http.Request) {
@@ -497,7 +497,7 @@ func TestRoutesSupportDynamicExternalMountPrefix(t *testing.T) {
 	manager := authenticatedManager()
 	handler := mustNewHandler(t, manager, testOptions(stubAuthenticator("admin", "secret", "user-1")))
 	r := chi.NewRouter()
-	if err := routes.Mount(r, "/tenants/{tenantID}", handler.Routes()); err != nil {
+	if err := routes.Mount(r, "tenants/{tenantID}", handler.Routes()); err != nil {
 		t.Fatalf("mount routes: %v", err)
 	}
 
@@ -547,7 +547,7 @@ func TestRoutesExportAuthRequirement(t *testing.T) {
 
 func TestRoutesGenerateOpenAPI(t *testing.T) {
 	opts := testOptions(stubAuthenticator("admin", "secret", "user-1"))
-	opts.BasePath = "/tenants/{tenantID}/auth"
+	opts.BasePath = new("tenants/{tenantID}/auth")
 	handler := mustNewHandler(t, &stubManager{}, opts)
 	if _, err := openapi.Generate(handler.Routes(), openapi.Options{Title: "Auth API", Version: "1"}); err != nil {
 		t.Fatalf("generate OpenAPI: %v", err)
@@ -558,6 +558,7 @@ func TestRefreshCookiePath(t *testing.T) {
 	tests := []struct {
 		name            string
 		options         authhttp.Options
+		loginPath       string
 		wantRefreshPath string
 	}{
 		{
@@ -567,16 +568,28 @@ func TestRefreshCookiePath(t *testing.T) {
 				RateLimit:          &authhttp.RateLimitOptions{Disabled: true},
 			},
 			wantRefreshPath: "/auth",
+			loginPath:       "/auth/login",
+		},
+		{
+			name: "explicit_root",
+			options: authhttp.Options{
+				BasePath:           new(""),
+				LoginAuthenticator: stubAuthenticator("admin", "secret", "user-1"),
+				RateLimit:          &authhttp.RateLimitOptions{Disabled: true},
+			},
+			loginPath:       "/login",
+			wantRefreshPath: "/",
 		},
 		{
 			name: "uses_explicit_public_path",
 			options: authhttp.Options{
-				BasePath:           "/auth",
+				BasePath:           new("auth"),
 				RefreshCookiePath:  "/api/auth",
 				LoginAuthenticator: stubAuthenticator("admin", "secret", "user-1"),
 				RateLimit:          &authhttp.RateLimitOptions{Disabled: true},
 			},
 			wantRefreshPath: "/api/auth",
+			loginPath:       "/auth/login",
 		},
 	}
 
@@ -586,7 +599,7 @@ func TestRefreshCookiePath(t *testing.T) {
 			manager := issuingManager(now)
 			r := mustNewTestRouter(t, manager, tc.options)
 
-			rec := serve(r, http.MethodPost, "/auth/login", `{"username":"admin","password":"secret","persistence":"persistent"}`, func(req *http.Request) {
+			rec := serve(r, http.MethodPost, tc.loginPath, `{"username":"admin","password":"secret","persistence":"persistent"}`, func(req *http.Request) {
 				req.Header.Set("Content-Type", "application/json")
 			})
 
@@ -598,6 +611,23 @@ func TestRefreshCookiePath(t *testing.T) {
 				t.Fatalf("expected refresh cookie path %q, got %q", tc.wantRefreshPath, got)
 			}
 		})
+	}
+}
+
+func TestHandlerValidatesAndOwnsBasePath(t *testing.T) {
+	opts := testOptions(stubAuthenticator("admin", "secret", "user-1"))
+	for _, path := range []string{"/auth", "auth/", "/", " auth"} {
+		opts.BasePath = new(path)
+		if _, err := authhttp.NewHandler(&stubManager{}, opts); err == nil {
+			t.Fatalf("accepted invalid BasePath %q", path)
+		}
+	}
+	path := "api/auth"
+	opts.BasePath = &path
+	h := mustNewHandler(t, &stubManager{}, opts)
+	path = "changed"
+	if got := h.Routes()[0].Path; got != "/api/auth/login" {
+		t.Fatalf("BasePath changed after construction: %q", got)
 	}
 }
 

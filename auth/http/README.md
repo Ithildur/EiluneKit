@@ -104,9 +104,7 @@ An empty header name defaults to `X-API-Key`.
 
 ## Routes
 
-Default base path: `/auth`.
-
-The table below is a route overview. Generate OpenAPI from `Handler.Routes()` for the request, response, status, parameter, and security contract.
+Default HTTP paths:
 
 | Route | Auth | Middleware |
 |---|---|---|
@@ -118,7 +116,7 @@ The table below is a route overview. Generate OpenAPI from `Handler.Routes()` fo
 | `DELETE /auth/sessions` | `required` | `RequireBearer` |
 | `DELETE /auth/sessions/{sid}` | `required` | `RequireBearer` |
 
-`Handler.Routes()` returns the same route set as declarative `http/routes.Route` values. Returned routes already contain their auth middleware.
+`Handler.Routes()` returns route declarations with authentication middleware for mounting and OpenAPI generation.
 `GET /auth/sessions` requires a manager that implements `auth.SessionLister`; `auth/jwt.Manager` supports it when the store supports session listing.
 `DELETE /auth/sessions` revokes the current user's sessions and clears stored session records when the manager supports cleanup.
 
@@ -135,8 +133,8 @@ spec, err := openapi.Generate(routeList, openapi.Options{
 ## Options
 
 - `LoginAuthenticator`: required credential verification entrypoint
-- `BasePath`: auth route prefix relative to the current router mount; default `/auth`
-- `RefreshCookiePath`: browser-visible refresh-cookie path; default `BasePath`
+- `BasePath`: `*string` relative mount directory; `nil` defaults to `"auth"`, `new("")` selects the root, and `new("api/auth")` selects `/api/auth`. Leading/trailing slashes and surrounding whitespace are rejected.
+- `RefreshCookiePath`: browser-visible absolute refresh-cookie path; defaults to `/` followed by the resolved `BasePath`
 - `CSRFCookiePath`: CSRF cookie path; default `/`
 - `RefreshCookieName`, `CSRFCookieName`, `CSRFHeaderName`: cookie and header names
 - `CookieSameSite`: optional auth cookie `SameSite` override; zero keeps automatic TLS/proxy-derived behavior
