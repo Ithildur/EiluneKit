@@ -44,4 +44,7 @@ require (
 	golang.org/x/text v0.41.0 // indirect
 )
 
-retract v0.2.4 // checksum mismatch after tag replacement; use v0.2.5
+retract (
+	v0.4.0 // routing rules superseded; use v0.4.1
+	v0.2.4 // checksum mismatch after tag replacement; use v0.2.5
+)
