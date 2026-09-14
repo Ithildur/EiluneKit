@@ -27,7 +27,7 @@ spec, err := openapi.Generate(routeList, openapi.Options{
 })
 ```
 
-`Options.BasePath` is a `*string` relative mount directory: `nil` defaults to `"auth"`, `new("")` selects the root, and `new("api/auth")` selects `/api/auth`. Leading/trailing slashes and surrounding whitespace are rejected.
+`Options.BasePath` is a `*string` route prefix: `nil` defaults to `"/auth"`, `new("")` selects the root, and `new("/api/auth")` selects `/api/auth`. Non-empty prefixes require a single leading slash; trailing slashes and surrounding whitespace are rejected.
 
 ## Recommended Stack
 

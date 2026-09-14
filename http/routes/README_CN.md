@@ -10,21 +10,23 @@
 
 ## 路径
 
-端点路径以单个 `/` 开头，例如 `Get("/users", ...)`；空端点 `""` 表示挂载目录本身。挂载目录没有前导或尾斜线，例如 `MountAt(router, "api")`。两类参数都不接受首尾空白。
+非空端点路径和路由前缀都以单个 `/` 开头，例如 `Get("/users", ...)` 配合 `MountAt(router, "/api")`。前缀不能以 `/` 结尾；不添加前缀时使用 `""`。两类参数都不接受首尾空白。
 
-| 挂载目录 | 端点路径 | HTTP 路径 |
+路径按 `prefix + path` 组合。空端点表示前缀本身，`"/"` 表示其带尾斜线的端点。组合后的路径不能为空：HTTP 根路由使用 `"/"`。
+
+| 前缀 | 端点路径 | HTTP 路径 |
 |---|---|---|
-| `""` | `""` | `/` |
-| `"api"` | `""` | `/api` |
-| `"api"` | `"/"` | `/api/` |
-| `"api"` | `"/users"` | `/api/users` |
-| `"api"` | `"/users/"` | `/api/users/` |
+| `""` | `"/"` | `/` |
+| `"/api"` | `""` | `/api` |
+| `"/api"` | `"/"` | `/api/` |
+| `"/api"` | `"/users"` | `/api/users` |
+| `"/api"` | `"/users/"` | `/api/users/` |
 
-`Route.Path` 使用同一套端点语法。`RoutesAt("api")` 和 `WithPrefix("api", ...)` 生成 `/api/users` 这样的路径，可以用空目录直接挂载并导出文档。违反上述斜线和空白格式规则时，Blueprint 声明和组合方法会 panic，挂载和导出函数返回错误。
+`Route.Path` 使用同一套端点语法。`RoutesAt("/api")` 和 `WithPrefix("/api", ...)` 生成 `/api/users` 这样的路径，可以用空前缀直接挂载并导出文档。斜线或空白格式无效时，Blueprint 声明和组合方法会 panic，挂载和导出函数返回错误。允许声明空端点，但组合后的路径必须非空；挂载和导出也会拒绝空的最终路径。
 
 完整的 chi 路由模式在挂载时检查；chi 的语法校验遇到 `/users/{id` 这样的错误模式会 panic。Blueprint 声明和组合方法，以及 `ExportJSON`、`ExportMarkdown` 摘要导出不校验完整路由模式。
 
-同一目录可以分多次挂载。Kit 按 HTTP 方法检查本批路由与目标 router 的 `Routes()` 快照；重复路由和通配符冲突会在写入本批路由前 panic，消息包含冲突路径。
+同一前缀可以分多次挂载。Kit 按 HTTP 方法检查本批路由与目标 router 的 `Routes()` 快照；重复路由和通配符冲突会在写入本批路由前 panic，消息包含冲突路径。
 
 - `/users/{id}/posts` 与 `/users/{name}/profile` 冲突：共享参数位置必须统一命名。
 - `/files/*` 与 `/files/download`、`/files/{name}` 或 `/files/` 冲突；`/files` 可以单独注册。
@@ -69,9 +71,9 @@ updater.Get(
 )
 
 api := routes.NewBlueprint()
-api.Include("updater", updater)
+api.Include("/updater", updater)
 
-routeList := api.RoutesAt("api")
+routeList := api.RoutesAt("/api")
 err = routes.Mount(r, "", routeList)
 ```
 
@@ -116,7 +118,7 @@ api := routes.NewBlueprint(
 	routes.DefaultMiddleware(authenticate),
 )
 api.Get("/account", "Current account", accountHandler)
-err := routes.MountWithOptions(router, "", api.RoutesAt("api"), routes.MountOptions{
+err := routes.MountWithOptions(router, "", api.RoutesAt("/api"), routes.MountOptions{
 	Unauthorized: http.HandlerFunc(writeUnauthorized),
 })
 ```
@@ -128,7 +130,7 @@ err := routes.MountWithOptions(router, "", api.RoutesAt("api"), routes.MountOpti
 ## 路由切片
 
 ```go
-routes.Mount(r, "api", []routes.Route{
+routes.Mount(r, "/api", []routes.Route{
 	{
 		Method:      http.MethodGet,
 		Path:        "/status",

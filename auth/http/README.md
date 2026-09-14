@@ -133,7 +133,7 @@ spec, err := openapi.Generate(routeList, openapi.Options{
 ## Options
 
 - `LoginAuthenticator`: required credential verification entrypoint
-- `BasePath`: `*string` relative mount directory; `nil` defaults to `"auth"`, `new("")` selects the root, and `new("api/auth")` selects `/api/auth`. Leading/trailing slashes and surrounding whitespace are rejected.
+- `BasePath`: `*string` route prefix; `nil` defaults to `"/auth"`, `new("")` selects the root, and `new("/api/auth")` selects `/api/auth`. Non-empty prefixes require a single leading slash; trailing slashes and surrounding whitespace are rejected.
 - `RefreshCookiePath`: browser-visible absolute refresh-cookie path; defaults to `/` followed by the resolved `BasePath`
 - `CSRFCookiePath`: CSRF cookie path; default `/`
 - `RefreshCookieName`, `CSRFCookieName`, `CSRFHeaderName`: cookie and header names

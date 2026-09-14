@@ -1,6 +1,7 @@
 package authhttp
 
 import (
+	"cmp"
 	"log/slog"
 	"net/http"
 	"net/netip"
@@ -11,7 +12,7 @@ import (
 )
 
 const defaultMaxBodyBytes int64 = 1 << 20
-const defaultAuthBasePath = "auth"
+const defaultAuthBasePath = "/auth"
 
 // Options configures NewHandler.
 // Options 配置 NewHandler。
@@ -19,8 +20,8 @@ type Options struct {
 	// LoginAuthenticator validates login credentials.
 	// LoginAuthenticator 校验登录凭据。
 	LoginAuthenticator LoginAuthenticator
-	// BasePath is a relative mount directory. Nil defaults to "auth"; new("") selects the root.
-	// BasePath 是相对挂载目录；nil 默认使用 "auth"，new("") 选择根目录。
+	// BasePath is a route prefix. Nil defaults to "/auth"; new("") selects the root.
+	// BasePath 是路由前缀；nil 默认使用 "/auth"，new("") 选择根目录。
 	BasePath *string
 	// RefreshCookiePath defaults to the absolute HTTP path for BasePath when empty.
 	// RefreshCookiePath 为空时默认使用 BasePath 对应的绝对 HTTP 路径。
@@ -130,7 +131,7 @@ func applyOptions(base, override Options) Options {
 	}
 
 	if strings.TrimSpace(base.RefreshCookiePath) == "" {
-		base.RefreshCookiePath = "/" + *base.BasePath
+		base.RefreshCookiePath = cmp.Or(*base.BasePath, "/")
 	} else {
 		base.RefreshCookiePath = normalizePath(base.RefreshCookiePath)
 	}

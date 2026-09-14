@@ -36,7 +36,7 @@ func TestMountRejectsConflictingRoutes(t *testing.T) {
 					mux := chi.NewRouter()
 					original := routes.Route{Method: "get", Path: first, Handler: http.NotFoundHandler()}
 					if separate {
-						if err := routes.Mount(mux, "api", []routes.Route{original}); err != nil {
+						if err := routes.Mount(mux, "/api", []routes.Route{original}); err != nil {
 							t.Fatal(err)
 						}
 					}
@@ -48,7 +48,7 @@ func TestMountRejectsConflictingRoutes(t *testing.T) {
 						batch = append(batch, original)
 					}
 					batch = append(batch, routes.Route{Method: http.MethodGet, Path: second, Handler: http.NotFoundHandler()})
-					assertRouteConflict(t, mux, "api", batch, "GET", "/api"+first, "/api"+second)
+					assertRouteConflict(t, mux, "/api", batch, "GET", "/api"+first, "/api"+second)
 					if wrapped {
 						t.Fatal("middleware was constructed before conflict detection completed")
 					}
@@ -65,12 +65,12 @@ func TestMountCannotOverwriteAuthentication(t *testing.T) {
 	mux := chi.NewRouter()
 	private := routes.NewBlueprint(routes.DefaultAuth(routes.AuthRequired))
 	private.Get("/account", "", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
-	if err := private.MountAt(mux, "api"); err != nil {
+	if err := private.MountAt(mux, "/api"); err != nil {
 		t.Fatal(err)
 	}
 	public := routes.NewBlueprint()
 	public.Get("/account", "", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusAccepted) })
-	assertRouteConflict(t, mux, "api", public.Routes(), "GET", "/api/account")
+	assertRouteConflict(t, mux, "/api", public.Routes(), "GET", "/api/account")
 	for _, authenticated := range []bool{false, true} {
 		request := httptest.NewRequest(http.MethodGet, "/api/account", nil)
 		want := http.StatusUnauthorized
@@ -103,7 +103,7 @@ func TestMountChecksExistingChiRoutes(t *testing.T) {
 			case "opaque mount":
 				mux.Mount("/api", handler)
 			}
-			assertRouteConflict(t, mux, "api", []routes.Route{{Method: http.MethodGet, Path: "/users", Handler: http.NotFoundHandler()}}, "GET", "/api/users")
+			assertRouteConflict(t, mux, "/api", []routes.Route{{Method: http.MethodGet, Path: "/users", Handler: http.NotFoundHandler()}}, "GET", "/api/users")
 			recorder := httptest.NewRecorder()
 			mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/users", nil))
 			if recorder.Code != http.StatusAccepted {
@@ -206,7 +206,7 @@ func TestMountAllowsDistinctRoutes(t *testing.T) {
 		{http.MethodGet, "/anonymous/{:[0-9]+}", "/anonymous/42"},
 	}
 	for _, test := range tests {
-		if err := routes.Mount(mux, "api", []routes.Route{{Method: test.method, Path: test.pattern,
+		if err := routes.Mount(mux, "/api", []routes.Route{{Method: test.method, Path: test.pattern,
 			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = fmt.Fprint(w, test.pattern) }),
 		}}); err != nil {
 			t.Fatal(err)

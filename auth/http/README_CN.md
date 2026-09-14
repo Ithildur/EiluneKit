@@ -133,7 +133,7 @@ spec, err := openapi.Generate(routeList, openapi.Options{
 ## 选项
 
 - `LoginAuthenticator`：必需的凭据校验入口
-- `BasePath`：`*string` 类型的相对挂载目录；`nil` 默认使用 `"auth"`，`new("")` 选择根目录，`new("api/auth")` 选择 `/api/auth`。前导斜线、尾斜线和首尾空白会被拒绝。
+- `BasePath`：`*string` 类型的路由前缀；`nil` 默认使用 `"/auth"`，`new("")` 选择根目录，`new("/api/auth")` 选择 `/api/auth`。非空前缀必须以单个斜线开头；尾斜线和首尾空白会被拒绝。
 - `RefreshCookiePath`：浏览器可见的 refresh cookie 绝对路径；默认是 `/` 加上解析后的 `BasePath`
 - `CSRFCookiePath`：CSRF cookie 路径；默认 `/`
 - `RefreshCookieName`、`CSRFCookieName`、`CSRFHeaderName`：cookie 与 header 名称

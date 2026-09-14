@@ -235,9 +235,9 @@ func (b *Blueprint) Delete[H HandlerFunc](path, summary string, fn H, opts ...Ro
 }
 
 // Include adds child routes under prefix.
-// Prefix must be relative without a trailing slash; invalid prefixes panic.
+// Prefix follows [WithPrefix]; invalid prefixes and empty combined paths panic.
 // Include 在 prefix 下添加子路由。
-// prefix 必须是无尾斜线的相对目录；无效前缀会 panic。
+// prefix 遵循 [WithPrefix] 的规则；无效前缀或组合后路径为空时 panic。
 func (b *Blueprint) Include(prefix string, child *Blueprint, opts ...IncludeOption) {
 	b = requireBlueprint(b)
 	child = requireBlueprint(child)
@@ -271,10 +271,10 @@ func (b *Blueprint) Routes() []Route {
 	return cloneRoutes(b.routes)
 }
 
-// RoutesAt returns route copies with the mount directory applied to endpoint paths.
+// RoutesAt returns route copies with prefix applied according to [WithPrefix].
 // Use the returned routes for both mounting and API contract generation.
 // Dynamic prefix parameters default to required string path parameters.
-// RoutesAt 返回端点 path 已添加挂载目录的路由副本。
+// RoutesAt 按 [WithPrefix] 的规则返回已添加 prefix 的路由副本。
 // 将返回的路由同时用于挂载和 API 契约生成。
 // 动态前缀参数默认成为必填的 string path 参数。
 func (b *Blueprint) RoutesAt(prefix string) []Route {
@@ -290,9 +290,9 @@ func (b *Blueprint) Mount(router chi.Router) error {
 	return b.MountAt(router, "")
 }
 
-// MountAt registers routes under a relative prefix without a trailing slash.
+// MountAt registers routes under prefix, following the path rules of [WithPrefix].
 // Registration conflicts panic; see [MountWithOptions].
-// MountAt 在无尾斜线的相对 prefix 下注册路由。
+// MountAt 在 prefix 下注册路由，路径规则遵循 [WithPrefix]。
 // 注册冲突会 panic；参见 [MountWithOptions]。
 func (b *Blueprint) MountAt(router chi.Router, prefix string) error {
 	b = requireBlueprint(b)

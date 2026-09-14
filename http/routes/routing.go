@@ -42,9 +42,9 @@ const (
 // 使用 Mount 挂载路由。
 type Route struct {
 	Method string
-	// Path starts with a single slash, or is empty to select the mount directory itself.
+	// Path starts with a single slash, or is empty to select a non-empty prefix itself.
 	// A lone slash selects its trailing-slash endpoint.
-	// Path 以单个斜线开头，或用空字符串选择挂载目录本身；单独的斜线选择其带尾斜线端点。
+	// Path 以单个斜线开头，或用空字符串选择非空前缀本身；单独的斜线选择其带尾斜线端点。
 	Path        string
 	Summary     string
 	Tags        []string
@@ -79,11 +79,13 @@ func (r Route) Clone() Route {
 
 // Mount registers routes on r.
 // Prefixes are expanded before registration; Mount does not create subrouters or mutate routes.
-// Prefix must be relative without a trailing slash; empty selects the current directory.
+// Non-empty prefixes start with a single slash and have no trailing slash.
+// Empty prefixes add nothing; the final path must not be empty.
 // Conflicts within the batch or with r.Routes() panic before registration; see [MountWithOptions].
 // Mount 在 r 上注册路由。
 // 前缀在注册前展开；Mount 不会创建子路由或修改 routes。
-// prefix 必须是无尾斜线的相对目录；空字符串选择当前目录。
+// 非空 prefix 以单个斜线开头且没有尾斜线。
+// 空 prefix 不添加前缀；最终路径不能为空。
 // 本批路由内部或与 r.Routes() 的冲突会在注册前 panic；参见 [MountWithOptions]。
 func Mount(r chi.Router, prefix string, routes []Route) error {
 	return MountWithOptions(r, prefix, routes, MountOptions{})
@@ -247,12 +249,14 @@ func sortExportRoutes(exported []exportRoute) {
 // Empty paths add no suffix; slash paths preserve their trailing slash.
 // Dynamic prefix parameters default to required string path parameters.
 // Existing path parameter metadata takes precedence.
-// Non-empty paths start with a slash. Invalid path or prefix syntax panics.
+// Non-empty paths and prefixes start with a single slash; prefixes have no trailing slash.
+// Invalid path or prefix syntax and empty combined paths panic.
 // WithPrefix 返回添加 prefix 后的路由副本。
 // 空 path 不添加后缀；斜线路径保留尾斜线。
 // 动态前缀参数默认成为必填的 string path 参数。
 // 已有的 path 参数元数据优先。
-// 非空路径以斜线开头；路径或前缀语法无效时 panic。
+// 非空路径和前缀以单个斜线开头；前缀没有尾斜线。
+// 路径或前缀语法无效、组合后路径为空时 panic。
 func WithPrefix(prefix string, routes []Route) []Route {
 	if err := routepath.ValidatePrefix(prefix); err != nil {
 		panic("routes: " + err.Error())
@@ -266,7 +270,11 @@ func WithPrefix(prefix string, routes []Route) []Route {
 		if err := routepath.Validate(out[i].Path); err != nil {
 			panic("routes: " + err.Error())
 		}
-		out[i].Path = routepath.Join(prefix, out[i].Path)
+		path, err := routepath.Pattern(routepath.Join(prefix, out[i].Path))
+		if err != nil {
+			panic("routes: " + err.Error())
+		}
+		out[i].Path = path
 		out[i].Parameters = withPrefixParameters(prefix, out[i].Parameters)
 	}
 	return out

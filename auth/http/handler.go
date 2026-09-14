@@ -236,7 +236,7 @@ func (h *Handler) Routes() []routes.Route {
 		h.handleDeleteSession,
 		revokeSessionOpts...,
 	)
-	authRoutes.Include("sessions", sessions)
+	authRoutes.Include("/sessions", sessions)
 
 	root := routes.NewBlueprint()
 	root.Include(*opts.BasePath, authRoutes)

@@ -27,7 +27,7 @@ spec, err := openapi.Generate(routeList, openapi.Options{
 })
 ```
 
-`Options.BasePath` 是 `*string` 类型的相对挂载目录：`nil` 默认使用 `"auth"`，`new("")` 选择根目录，`new("api/auth")` 选择 `/api/auth`。前导斜线、尾斜线和首尾空白会被拒绝。
+`Options.BasePath` 是 `*string` 类型的路由前缀：`nil` 默认使用 `"/auth"`，`new("")` 选择根目录，`new("/api/auth")` 选择 `/api/auth`。非空前缀必须以单个斜线开头；尾斜线和首尾空白会被拒绝。
 
 ## 推荐组合
 

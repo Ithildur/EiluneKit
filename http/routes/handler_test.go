@@ -72,7 +72,7 @@ func TestBlueprintRejectsInvalidBindings(t *testing.T) {
 	b.Get("/remotes/{id}", "", func(http.ResponseWriter, *http.Request, string, string) {})
 	for _, test := range []struct{ prefix, want string }{
 		{"", "handler expects 2 path params, route has 1"},
-		{"tenants/{id}", "duplicate path param \"id\""},
+		{"/tenants/{id}", "duplicate path param \"id\""},
 	} {
 		t.Run(test.prefix, func(t *testing.T) {
 			err := b.MountAt(chi.NewRouter(), test.prefix)
@@ -89,7 +89,7 @@ func TestBlueprintBindingsAreIndependent(t *testing.T) {
 		_, _ = io.WriteString(w, owner+"/"+item)
 	})
 	mux := chi.NewRouter()
-	for _, prefix := range []string{"tenants/{tenant}", "users/{user}"} {
+	for _, prefix := range []string{"/tenants/{tenant}", "/users/{user}"} {
 		if err := b.MountAt(mux, prefix); err != nil {
 			t.Fatal(err)
 		}

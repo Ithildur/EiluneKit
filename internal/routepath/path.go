@@ -1,5 +1,5 @@
-// Package routepath defines endpoint paths and mount directories.
-// Package routepath 定义端点路径和挂载目录。
+// Package routepath defines endpoint paths and route prefixes.
+// Package routepath 定义端点路径和路由前缀。
 package routepath
 
 import (
@@ -19,38 +19,35 @@ func Validate(path string) error {
 	return nil
 }
 
-// ValidatePrefix checks a mount directory. Empty means the current directory.
-// ValidatePrefix 检查挂载目录；空字符串表示当前目录。
+// ValidatePrefix checks a route prefix. Empty means no prefix.
+// ValidatePrefix 检查路由前缀；空字符串表示不添加前缀。
 func ValidatePrefix(prefix string) error {
 	if strings.TrimSpace(prefix) != prefix {
 		return fmt.Errorf("route prefix %q must not contain surrounding whitespace", prefix)
 	}
-	if strings.HasPrefix(prefix, "/") {
-		return fmt.Errorf("route prefix %q must not start with a slash; use an empty prefix for the current directory", prefix)
+	if prefix != "" && (!strings.HasPrefix(prefix, "/") || strings.HasPrefix(prefix, "//")) {
+		return fmt.Errorf("route prefix %q must start with a single slash, or be empty", prefix)
 	}
 	if strings.HasSuffix(prefix, "/") {
-		return fmt.Errorf("route prefix %q must not end with a slash; use an empty prefix for the current directory", prefix)
+		return fmt.Errorf("route prefix %q must not end with a slash; use an empty prefix for the root", prefix)
 	}
 	return nil
 }
 
-// Join combines a validated mount directory and endpoint path, preserving trailing slashes.
-// Join 组合已校验的挂载目录和端点路径，保留尾斜线。
+// Join combines a validated route prefix and endpoint path, preserving trailing slashes.
+// Join 组合已校验的路由前缀和端点路径，保留尾斜线。
 func Join(prefix, path string) string {
-	if prefix == "" {
-		return path
-	}
-	return "/" + prefix + path
+	return prefix + path
 }
 
-// Pattern validates an endpoint path and resolves an empty final path to the HTTP root.
-// Pattern 校验端点路径，将空的最终路径解析为 HTTP 根路径。
+// Pattern validates a non-empty final path.
+// Pattern 校验非空的最终路径。
 func Pattern(path string) (string, error) {
 	if err := Validate(path); err != nil {
 		return "", err
 	}
 	if path == "" {
-		return "/", nil
+		return "", fmt.Errorf("route path must not be empty; use \"/\" for the root")
 	}
 	return path, nil
 }

@@ -105,7 +105,7 @@ func newTestHandler(t *testing.T, options ...rbachttp.Options) (*rbachttp.Handle
 }
 
 func TestHandlerBasePath(t *testing.T) {
-	for _, path := range []string{"/auth", "auth/", "/", " auth"} {
+	for _, path := range []string{"auth", "/auth/", "/", "//auth", " /auth", "/auth "} {
 		if _, err := rbachttp.NewHandler(&corerbac.Service{}, rbachttp.Options{BasePath: new(path)}); err == nil {
 			t.Fatalf("accepted invalid BasePath %q", path)
 		}

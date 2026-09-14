@@ -19,9 +19,9 @@ func NewRouter() *Router {
 }
 
 // Include adds routes under prefix.
-// Prefix must be relative without a trailing slash; invalid paths or prefixes panic.
+// Paths and prefixes follow [WithPrefix]; invalid or empty combined paths panic.
 // Include 在 prefix 下添加路由。
-// prefix 必须是无尾斜线的相对目录；无效路径或前缀会 panic。
+// 路径和前缀遵循 [WithPrefix] 的规则；无效路径或组合后路径为空时 panic。
 func (r *Router) Include(prefix string, routes []Route) {
 	r = requireRouter(r)
 	r.routes = append(r.routes, WithPrefix(prefix, routes)...)

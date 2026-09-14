@@ -478,7 +478,7 @@ func TestRegisterRejectsNilHandler(t *testing.T) {
 func TestRegisterSupportsDynamicAuthBasePath(t *testing.T) {
 	manager := authenticatedManager()
 	opts := testOptions(stubAuthenticator("admin", "secret", "user-1"))
-	opts.BasePath = new("tenants/{tenantID}/auth")
+	opts.BasePath = new("/tenants/{tenantID}/auth")
 	r := mustNewTestRouter(t, manager, opts)
 
 	rec := serve(r, http.MethodDelete, "/tenants/acme/auth/sessions/sid-2", "", func(req *http.Request) {
@@ -497,7 +497,7 @@ func TestRoutesSupportDynamicExternalMountPrefix(t *testing.T) {
 	manager := authenticatedManager()
 	handler := mustNewHandler(t, manager, testOptions(stubAuthenticator("admin", "secret", "user-1")))
 	r := chi.NewRouter()
-	if err := routes.Mount(r, "tenants/{tenantID}", handler.Routes()); err != nil {
+	if err := routes.Mount(r, "/tenants/{tenantID}", handler.Routes()); err != nil {
 		t.Fatalf("mount routes: %v", err)
 	}
 
@@ -547,7 +547,7 @@ func TestRoutesExportAuthRequirement(t *testing.T) {
 
 func TestRoutesGenerateOpenAPI(t *testing.T) {
 	opts := testOptions(stubAuthenticator("admin", "secret", "user-1"))
-	opts.BasePath = new("tenants/{tenantID}/auth")
+	opts.BasePath = new("/tenants/{tenantID}/auth")
 	handler := mustNewHandler(t, &stubManager{}, opts)
 	if _, err := openapi.Generate(handler.Routes(), openapi.Options{Title: "Auth API", Version: "1"}); err != nil {
 		t.Fatalf("generate OpenAPI: %v", err)
@@ -583,7 +583,7 @@ func TestRefreshCookiePath(t *testing.T) {
 		{
 			name: "uses_explicit_public_path",
 			options: authhttp.Options{
-				BasePath:           new("auth"),
+				BasePath:           new("/auth"),
 				RefreshCookiePath:  "/api/auth",
 				LoginAuthenticator: stubAuthenticator("admin", "secret", "user-1"),
 				RateLimit:          &authhttp.RateLimitOptions{Disabled: true},
@@ -616,13 +616,13 @@ func TestRefreshCookiePath(t *testing.T) {
 
 func TestHandlerValidatesAndOwnsBasePath(t *testing.T) {
 	opts := testOptions(stubAuthenticator("admin", "secret", "user-1"))
-	for _, path := range []string{"/auth", "auth/", "/", " auth"} {
+	for _, path := range []string{"auth", "/auth/", "/", "//auth", " /auth", "/auth "} {
 		opts.BasePath = new(path)
 		if _, err := authhttp.NewHandler(&stubManager{}, opts); err == nil {
 			t.Fatalf("accepted invalid BasePath %q", path)
 		}
 	}
-	path := "api/auth"
+	path := "/api/auth"
 	opts.BasePath = &path
 	h := mustNewHandler(t, &stubManager{}, opts)
 	path = "changed"

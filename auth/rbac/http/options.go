@@ -6,14 +6,14 @@ import (
 	corerbac "github.com/Ithildur/EiluneKit/auth/rbac"
 )
 
-const defaultAuthBasePath = "auth"
+const defaultAuthBasePath = "/auth"
 const defaultMaxBodyBytes int64 = 1 << 20
 
 // Options configures NewHandler.
 // Options 配置 NewHandler。
 type Options struct {
-	// BasePath is a relative mount directory. Nil defaults to "auth"; new("") selects the root.
-	// BasePath 是相对挂载目录；nil 默认使用 "auth"，new("") 选择根目录。
+	// BasePath is a route prefix. Nil defaults to "/auth"; new("") selects the root.
+	// BasePath 是路由前缀；nil 默认使用 "/auth"，new("") 选择根目录。
 	BasePath       *string
 	MaxBodyBytes   int64
 	TrustedProxies []netip.Prefix

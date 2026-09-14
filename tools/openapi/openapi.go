@@ -39,9 +39,9 @@ type Options struct {
 }
 
 // Generate returns validated OpenAPI 3.1 JSON for routeList.
-// Route paths must include their final mount directories and start with a slash unless empty.
+// Route paths must include their final prefixes and start with a single slash.
 // Generate 返回 routeList 对应且已通过校验的 OpenAPI 3.1 JSON。
-// 路由 path 必须包含最终挂载目录；非空路径必须以斜线开头。
+// 路由 path 必须包含最终前缀并以单个斜线开头。
 func Generate(routeList []routes.Route, opts Options) ([]byte, error) {
 	opts.Title = strings.TrimSpace(opts.Title)
 	if opts.Title == "" {

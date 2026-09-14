@@ -27,7 +27,7 @@ func TestBlueprintIncludesChildRoutes(t *testing.T) {
 	)
 
 	parent := routes.NewBlueprint()
-	parent.Include("updater", child, routes.IncludeTags("updater"))
+	parent.Include("/updater", child, routes.IncludeTags("updater"))
 
 	payload, err := parent.ExportJSON()
 	if err != nil {
@@ -80,7 +80,7 @@ func TestBlueprintRoutesAtComposesPaths(t *testing.T) {
 		prefix string
 		want   string
 	}{
-		{prefix: "api", want: "/api/users"},
+		{prefix: "/api", want: "/api/users"},
 		{prefix: "", want: "/users"},
 	} {
 		routeList := blueprint.RoutesAt(test.prefix)
@@ -89,7 +89,7 @@ func TestBlueprintRoutesAtComposesPaths(t *testing.T) {
 		}
 	}
 
-	routeList := blueprint.RoutesAt("tenants/{tenantID}")
+	routeList := blueprint.RoutesAt("/tenants/{tenantID}")
 	params := routeList[0].Parameters
 	if len(params) != 1 || params[0].Name != "tenantID" || params[0].In != routes.ParameterPath || !params[0].Required {
 		t.Fatalf("unexpected dynamic prefix parameters: %#v", params)
@@ -150,7 +150,7 @@ func TestBlueprintDefaults(t *testing.T) {
 	}
 
 	r := chi.NewRouter()
-	if err := blueprint.MountAt(r, "api"); err != nil {
+	if err := blueprint.MountAt(r, "/api"); err != nil {
 		t.Fatalf("mount: %v", err)
 	}
 
@@ -187,7 +187,7 @@ func TestBlueprintIncludeMiddlewarePrependsChildRoutes(t *testing.T) {
 	}, routes.Use(routeMW))
 
 	parent := routes.NewBlueprint()
-	parent.Include("child", child, routes.IncludeMiddleware(includeMW))
+	parent.Include("/child", child, routes.IncludeMiddleware(includeMW))
 
 	exportedRoutes := parent.Routes()
 	if got, want := len(exportedRoutes), 1; got != want {
@@ -218,7 +218,7 @@ func TestBlueprintIncludeAuthOverridesChildRoutes(t *testing.T) {
 	child.Get("/public", "", func(w http.ResponseWriter, r *http.Request) {}, routes.Auth(routes.AuthPublic))
 
 	parent := routes.NewBlueprint()
-	parent.Include("child", child, routes.IncludeAuth(routes.AuthRequired))
+	parent.Include("/child", child, routes.IncludeAuth(routes.AuthRequired))
 
 	exportedRoutes := parent.Routes()
 	if got, want := len(exportedRoutes), 1; got != want {
@@ -232,7 +232,7 @@ func TestBlueprintIncludeAuthOverridesChildRoutes(t *testing.T) {
 func TestMountRequiresAuthenticatedContext(t *testing.T) {
 	called := false
 	r := chi.NewRouter()
-	err := routes.Mount(r, "api", []routes.Route{
+	err := routes.Mount(r, "/api", []routes.Route{
 		{
 			Method: "get",
 			Path:   "/users",
@@ -271,24 +271,24 @@ func TestMountUsesFinalPaths(t *testing.T) {
 			var err error
 			switch mount {
 			case "prefix":
-				err = b.MountAt(mux, "api")
+				err = b.MountAt(mux, "/api")
 			case "expanded":
-				err = routes.Mount(mux, "", b.RoutesAt("api"))
+				err = routes.Mount(mux, "", b.RoutesAt("/api"))
 			case "include":
 				parent := routes.NewBlueprint()
-				parent.Include("", b)
-				err = parent.MountAt(mux, "api")
+				parent.Include("/api", b)
+				err = parent.Mount(mux)
 			case "router":
 				parent := routes.NewRouter()
-				parent.Include("", b.Routes())
-				err = parent.Mount(mux, "api")
+				parent.Include("/api", b.Routes())
+				err = parent.Mount(mux, "")
 			}
 			if err != nil {
 				t.Fatal(err)
 			}
 			// Separate mounting calls may share a prefix.
 			// 独立的挂载调用可以共享前缀。
-			if err := routes.Mount(mux, "api", []routes.Route{{Method: http.MethodGet, Path: "/other", Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })}}); err != nil {
+			if err := routes.Mount(mux, "/api", []routes.Route{{Method: http.MethodGet, Path: "/other", Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })}}); err != nil {
 				t.Fatal(err)
 			}
 			for _, test := range []struct {
@@ -316,33 +316,42 @@ func TestMountUsesFinalPaths(t *testing.T) {
 	}
 }
 
-func TestMountNormalizesEmptyFinalPath(t *testing.T) {
+func TestMountRequiresExplicitRootPath(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
-	for _, path := range []string{"", "/"} {
-		mux := chi.NewRouter()
-		if err := routes.Mount(mux, "", []routes.Route{{Method: http.MethodGet, Path: path, Handler: handler}}); err != nil {
-			t.Fatal(err)
-		}
-		w := httptest.NewRecorder()
-		mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
-		if w.Code != http.StatusNoContent {
-			t.Fatalf("path %q: status %d", path, w.Code)
-		}
+	b := routes.NewBlueprint()
+	b.Get("", "", handler)
+	mustPanic(t, func() { b.RoutesAt("") })
+	mustPanic(t, func() { routes.NewBlueprint().Include("", b) })
+	mustPanic(t, func() { routes.NewRouter().Include("", b.Routes()) })
+	if _, err := b.ExportJSON(); err == nil {
+		t.Fatal("JSON export accepted an empty final path")
 	}
-	mustPanic(t, func() {
-		_ = routes.Mount(chi.NewRouter(), "", []routes.Route{
-			{Method: http.MethodGet, Path: "", Handler: handler},
-			{Method: http.MethodGet, Path: "/", Handler: handler},
-		})
-	})
+	if _, err := b.ExportMarkdown(); err == nil {
+		t.Fatal("Markdown export accepted an empty final path")
+	}
+	mux := chi.NewRouter()
+	if err := b.Mount(mux); err == nil || !strings.Contains(err.Error(), "route path must not be empty") {
+		t.Fatalf("mount error = %v, want empty path error", err)
+	}
+	if len(mux.Routes()) != 0 {
+		t.Fatal("invalid root registered a route")
+	}
+	if err := routes.Mount(mux, "", []routes.Route{{Method: http.MethodGet, Path: "/", Handler: handler}}); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("root status %d", w.Code)
+	}
 }
 
 func TestBlueprintIncludeOwnsRoutes(t *testing.T) {
 	child := routes.NewBlueprint()
 	child.Get("/items", "", func(http.ResponseWriter, *http.Request) {}, routes.Tags("child"), routes.Auth(routes.AuthOptional))
 	parent := routes.NewBlueprint(routes.DefaultTags("parent"))
-	parent.Include("first", child, routes.IncludeTags("included"), routes.IncludeAuth(routes.AuthRequired))
-	parent.Include("second", child)
+	parent.Include("/first", child, routes.IncludeTags("included"), routes.IncludeAuth(routes.AuthRequired))
+	parent.Include("/second", child)
 	got := parent.Routes()
 	if got[0].Path != "/first/items" || got[0].Auth != routes.AuthRequired || !reflect.DeepEqual(got[0].Tags, []string{"parent", "child", "included"}) {
 		t.Fatalf("unexpected first route: %#v", got[0])
@@ -353,7 +362,7 @@ func TestBlueprintIncludeOwnsRoutes(t *testing.T) {
 	if original := child.Routes()[0]; original.Path != "/items" || original.Auth != routes.AuthOptional || !reflect.DeepEqual(original.Tags, []string{"child"}) {
 		t.Fatalf("child changed: %#v", original)
 	}
-	parent.Include("copy", parent)
+	parent.Include("/copy", parent)
 	if len(parent.Routes()) != 4 {
 		t.Fatal("self-include did not snapshot existing routes")
 	}

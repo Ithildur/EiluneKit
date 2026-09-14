@@ -33,8 +33,8 @@ func TestGeneratePreservesTrailingSlash(t *testing.T) {
 			routes.OperationID(route.operation), routes.EmptyResponse(http.StatusNoContent, "Success"))
 	}
 	api := routes.NewBlueprint()
-	api.Include("", child)
-	payload, err := openapi.Generate(api.RoutesAt("api"), openapi.Options{Title: "API", Version: "1.0.0"})
+	api.Include("/api", child)
+	payload, err := openapi.Generate(api.Routes(), openapi.Options{Title: "API", Version: "1.0.0"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,8 +51,8 @@ func TestGeneratePreservesTrailingSlash(t *testing.T) {
 	}
 }
 
-func TestGenerateRejectsPathsWithoutLeadingSlash(t *testing.T) {
-	for _, path := range []string{"api", " /api", "/api "} {
+func TestGenerateRejectsInvalidPaths(t *testing.T) {
+	for _, path := range []string{"", "api", "//api", " /api", "/api "} {
 		_, err := openapi.Generate([]routes.Route{{
 			Method: http.MethodGet, Path: path, OperationID: "getAPI",
 			Responses: map[string]routes.Response{"204": {Description: "Success"}},
@@ -98,14 +98,14 @@ func TestGenerateOpenAPI31Contract(t *testing.T) {
 		}),
 	)
 
-	payload, err := openapi.Generate(api.RoutesAt("api"), openapi.Options{
+	payload, err := openapi.Generate(api.RoutesAt("/api"), openapi.Options{
 		Title:   "Widget API",
 		Version: "1.0.0",
 	})
 	if err != nil {
 		t.Fatalf("generate OpenAPI: %v", err)
 	}
-	again, err := openapi.Generate(api.RoutesAt("api"), openapi.Options{
+	again, err := openapi.Generate(api.RoutesAt("/api"), openapi.Options{
 		Title:   "Widget API",
 		Version: "1.0.0",
 	})

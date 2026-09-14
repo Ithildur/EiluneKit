@@ -10,21 +10,23 @@ Use `routes.Blueprint` to declare handlers, metadata, tags, and middleware. Use 
 
 ## Paths
 
-Endpoint paths start with a single `/`: use `Get("/users", ...)`. The empty endpoint `""` selects the mount directory itself. Mount directories have neither leading nor trailing slashes: use `MountAt(router, "api")`. Surrounding whitespace is rejected for both.
+Non-empty endpoint paths and route prefixes start with a single `/`: use `Get("/users", ...)` with `MountAt(router, "/api")`. Prefixes cannot end with `/`; use `""` for no prefix. Surrounding whitespace is rejected for both.
 
-| Mount directory | Endpoint path | HTTP path |
+Paths are composed as `prefix + path`. An empty endpoint selects the prefix itself; `"/"` selects its trailing-slash endpoint. A combined path cannot be empty: use `"/"` for the HTTP root.
+
+| Prefix | Endpoint path | HTTP path |
 |---|---|---|
-| `""` | `""` | `/` |
-| `"api"` | `""` | `/api` |
-| `"api"` | `"/"` | `/api/` |
-| `"api"` | `"/users"` | `/api/users` |
-| `"api"` | `"/users/"` | `/api/users/` |
+| `""` | `"/"` | `/` |
+| `"/api"` | `""` | `/api` |
+| `"/api"` | `"/"` | `/api/` |
+| `"/api"` | `"/users"` | `/api/users` |
+| `"/api"` | `"/users/"` | `/api/users/` |
 
-`Route.Path` uses the same endpoint syntax. `RoutesAt("api")` and `WithPrefix("api", ...)` produce paths such as `/api/users`, ready for mounting with an empty directory and for document export. Violations of the slash and whitespace rules above cause Blueprint declaration/composition methods to panic and mount/export functions to return errors.
+`Route.Path` uses the same endpoint syntax. `RoutesAt("/api")` and `WithPrefix("/api", ...)` produce paths such as `/api/users`, ready for mounting with an empty prefix and for document export. Invalid slash or whitespace formatting causes Blueprint declaration/composition methods to panic and mount/export functions to return errors. Empty endpoints may be declared, but composition requires a non-empty combined path; mounting and export reject empty final paths.
 
 Full chi route patterns are checked during mounting; chi's syntax validation panics on malformed patterns such as `/users/{id`. Blueprint declaration/composition and the `ExportJSON`/`ExportMarkdown` summary exports do not validate full route patterns.
 
-Multiple mounts may share a directory. Kit checks the batch and the target router's `Routes()` snapshot by HTTP method. Duplicate routes and wildcard conflicts panic before the batch is registered, with the conflicting paths in the message.
+Multiple mounts may share a prefix. Kit checks the batch and the target router's `Routes()` snapshot by HTTP method. Duplicate routes and wildcard conflicts panic before the batch is registered, with the conflicting paths in the message.
 
 - `/users/{id}/posts` conflicts with `/users/{name}/profile`: shared parameter positions must use the same name.
 - `/files/*` conflicts with `/files/download`, `/files/{name}`, or `/files/`; `/files` may be registered separately.
@@ -69,9 +71,9 @@ updater.Get(
 )
 
 api := routes.NewBlueprint()
-api.Include("updater", updater)
+api.Include("/updater", updater)
 
-routeList := api.RoutesAt("api")
+routeList := api.RoutesAt("/api")
 err = routes.Mount(r, "", routeList)
 ```
 
@@ -116,7 +118,7 @@ api := routes.NewBlueprint(
 	routes.DefaultMiddleware(authenticate),
 )
 api.Get("/account", "Current account", accountHandler)
-err := routes.MountWithOptions(router, "", api.RoutesAt("api"), routes.MountOptions{
+err := routes.MountWithOptions(router, "", api.RoutesAt("/api"), routes.MountOptions{
 	Unauthorized: http.HandlerFunc(writeUnauthorized),
 })
 ```
@@ -128,7 +130,7 @@ Here `sessions`, `withPrincipal`, and the response handlers belong to the applic
 ## Route Slices
 
 ```go
-routes.Mount(r, "api", []routes.Route{
+routes.Mount(r, "/api", []routes.Route{
 	{
 		Method:      http.MethodGet,
 		Path:        "/status",
