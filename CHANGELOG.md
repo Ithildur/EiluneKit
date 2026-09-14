@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.4.0 - 2026-09-15
+
+### Breaking
+
+- Non-empty endpoint paths, including `Route.Path` and OpenAPI input, require a single leading slash. Mount directories require no leading or trailing slash. Use `Get("/users", ...)` with `MountAt(router, "api")`. Surrounding whitespace is rejected. Violations of these path-format rules cause a panic in Blueprint declaration/composition methods and an error in mount/export functions.
+- Prefixed mounts register on the supplied chi router and use its 404/405 handlers. Under `"api"`, endpoint `""` matches `/api` and `"/"` matches `/api/`; declare both to serve both URLs. Applications relying on subrouter inspection or prefix catch-all dispatch must create chi subrouters explicitly.
+- `auth/http.Options.BasePath` and `auth/rbac/http.Options.BasePath` are `*string` relative directories. Replace `"/api/auth"` with `new("api/auth")`; use `nil` for the default `"auth"` or `new("")` for the root. Invalid directory syntax is rejected at construction. Cookie paths remain absolute.
+- Injected path parameters use `Request.PathValue`, including explicitly empty values. Middleware must update them with `SetPathValue`; modifying only `chi.RouteContext` does not update injected values.
+- All nil Blueprint handler functions panic with `routes: nil handler function`.
+- Kit route mounts panic on duplicate method/path registrations, inconsistent names at a shared parameter branch, and catch-all conflicts in the batch or the router's `Routes()` snapshot. Remove duplicate registrations, use consistent parameter names, and separate catch-all routes from their descendants. Validation completes before the batch is registered; duplicates no longer return an error or overwrite an existing handler. Checks run only on Kit mounts and do not cover chi's hidden `Mount` forwarding aliases.
+
+### Added
+
+- Blueprint handler functions now accept up to 15 dynamic string path parameters, including dynamic mount and include prefixes.
+
+### Changed
+
+- Reduced allocations in parameterized route dispatch, Blueprint inclusion, access logging, and allowed-method detection.
+
+### Fixed
+
+- Dynamic string handlers bind terminal catch-all values in paths such as `/files*`, including an empty match.
+
 ## v0.3.1 - 2026-09-14
 
 ### Breaking
