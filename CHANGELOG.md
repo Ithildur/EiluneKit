@@ -25,6 +25,10 @@
 
 - Dynamic string handlers bind terminal catch-all values in paths such as `/files*`, including an empty match.
 
+## v0.4.0 - 2026-09-15
+
+Retracted; use v0.4.1.
+
 ## v0.3.1 - 2026-09-14
 
 ### Breaking
