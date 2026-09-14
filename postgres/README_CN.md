@@ -51,6 +51,7 @@ if err := migration.RequireCurrent(ctx, cfg); err != nil {
 ## 说明
 
 - `gorm` 和 `pgx` 需要显式提供非空 `context.Context`
+- `gorm.Connect` 使用调用方 context 验证连接，无 deadline 时使用五秒超时，验证失败会关闭 SQL 连接池。成功后连接池归调用方所有，由调用方关闭。
 - `gorm.NewLogger` 默认隐藏 SQL 查询参数值；只在受控调试时设置 `LogOptions.IncludeQueryParams`
 - `migration` 需要显式提供非空 `context.Context`；应用命令仍负责配置、连接装配、输出和退出状态
 - `dbtypes` 用来把驱动相关类型别名隔离在业务模型包之外

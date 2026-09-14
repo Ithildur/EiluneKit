@@ -51,6 +51,7 @@ Use `errors.Is` with `migration.ErrSchemaAhead`, `migration.ErrSchemaBehind`, an
 ## Notes
 
 - `gorm` and `pgx` expect an explicit non-nil `context.Context`
+- `gorm.Connect` verifies the connection with the caller's context, using a five-second timeout when it has no deadline, and closes the SQL pool if verification fails. On success, the caller owns the pool and must close it.
 - `gorm.NewLogger` hides SQL query parameter values by default; set `LogOptions.IncludeQueryParams` only for controlled debugging
 - `migration` expects an explicit non-nil `context.Context`; the application command remains responsible for configuration, connection setup, output, and exit status
 - `dbtypes` keeps driver-specific aliases out of application model packages

@@ -4,6 +4,7 @@ package gorm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -55,12 +56,13 @@ func BuildDSN(cfg Config) (string, error) {
 //
 //	db, _ := gorm.Connect(ctx, gorm.Config{Host: "localhost", Port: 5432, User: "app", Database: "db"})
 func Connect(ctx context.Context, cfg Config) (*gorm.DB, error) {
+	ctx = contextutil.Require(ctx)
 	dsn, err := BuildDSN(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	gormCfg := &gorm.Config{}
+	gormCfg := &gorm.Config{DisableAutomaticPing: true}
 	if cfg.Logger != nil {
 		gormCfg.Logger = cfg.Logger
 	}
@@ -89,7 +91,7 @@ func Connect(ctx context.Context, cfg Config) (*gorm.DB, error) {
 	}
 
 	if err := Ping(ctx, db); err != nil {
-		return nil, err
+		return nil, errors.Join(err, sqlDB.Close())
 	}
 
 	return db, nil
