@@ -28,10 +28,14 @@ func Authenticated(ctx context.Context) bool {
 	return ok
 }
 
-func requireAuthenticated(next http.Handler) http.Handler {
+func requireAuthenticated(next, unauthorized http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !Authenticated(r.Context()) {
-			response.WriteJSONError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+			if unauthorized != nil {
+				unauthorized.ServeHTTP(w, r)
+			} else {
+				response.WriteJSONError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+			}
 			return
 		}
 		next.ServeHTTP(w, r)

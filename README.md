@@ -16,6 +16,7 @@ Requires Go 1.27.1 or newer.
 
 - `auth` owns shared principal helpers and transport-neutral auth flows. `auth/http` adapts the default session auth flow to HTTP; `auth/rbac` and `auth/rbac/http` handle multi-user JSON bearer auth.
 - `http/routes` keeps route metadata next to handlers. `Route` is the data model; `Blueprint` is the recommended builder.
+- Built-in auth is optional. Applications can use their own middleware, principals, sessions, and login routes; see [application authentication](http/routes/README.md#application-authentication).
 - `tools/openapi` optionally turns final route metadata into validated OpenAPI 3.1 JSON. Handlers remain ordinary `net/http` handlers without runtime schema validation.
 - `http/static` mounts static files and SPA handlers from project-relative paths such as `dist` or `web/dist`.
 - `postgres/migration` runs explicit Goose-backed Postgres migrations with session advisory locking and startup checks for pending or newer schemas.

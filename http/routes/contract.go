@@ -76,6 +76,15 @@ type RequestBody struct {
 type Response struct {
 	Description string
 	Content     Content
+	Headers     map[string]Header
+}
+
+// Header describes a response header. Content-Type is declared through Response.Content.
+// Header 描述响应头；Content-Type 通过 Response.Content 声明。
+type Header struct {
+	Description string
+	Required    bool
+	Schema      SchemaRef
 }
 
 // SecuritySchemeType identifies a supported security scheme shape.
@@ -186,6 +195,7 @@ func (b RequestBody) clone() RequestBody {
 
 func (r Response) clone() Response {
 	r.Content = cloneContent(r.Content)
+	r.Headers = maps.Clone(r.Headers)
 	return r
 }
 

@@ -25,6 +25,8 @@ const version = "3.1.1"
 
 var responseStatusPattern = regexp.MustCompile(`^(?:[1-5][0-9]{2}|[1-5]XX|default)$`)
 
+var headerNamePattern = regexp.MustCompile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+
 // Options configures OpenAPI document generation.
 // Title and Version are required.
 // Options 配置 OpenAPI 文档生成。
@@ -301,12 +303,49 @@ func (b *builder) buildResponses(index int, route routes.Route) (*openapi3.Respo
 		if err != nil {
 			return nil, routeError(index, route, fmt.Errorf("response %s: %w", status, err))
 		}
+		headers, err := b.buildHeaders(response.Headers)
+		if err != nil {
+			return nil, routeError(index, route, fmt.Errorf("response %s: %w", status, err))
+		}
 		responses.Set(status, &openapi3.ResponseRef{Value: &openapi3.Response{
 			Description: &response.Description,
 			Content:     content,
+			Headers:     headers,
 		}})
 	}
 	return responses, nil
+}
+
+func (b *builder) buildHeaders(headers map[string]routes.Header) (openapi3.Headers, error) {
+	if len(headers) == 0 {
+		return nil, nil
+	}
+	out := make(openapi3.Headers, len(headers))
+	seen := make(map[string]bool, len(headers))
+	for _, name := range slices.Sorted(maps.Keys(headers)) {
+		if !headerNamePattern.MatchString(name) {
+			return nil, fmt.Errorf("invalid response header name %q", name)
+		}
+		key := strings.ToLower(name)
+		if key == "content-type" {
+			return nil, fmt.Errorf("response header %q must use response content", name)
+		}
+		if seen[key] {
+			return nil, fmt.Errorf("duplicate response header %q", name)
+		}
+		seen[key] = true
+		header := headers[name]
+		schema, err := b.schema(header.Schema)
+		if err != nil {
+			return nil, fmt.Errorf("response header %q schema: %w", name, err)
+		}
+		out[name] = &openapi3.HeaderRef{Value: &openapi3.Header{
+			Description: header.Description,
+			Required:    header.Required,
+			Schema:      schema,
+		}}
+	}
+	return out, nil
 }
 
 func (b *builder) buildContent(content routes.Content) (openapi3.Content, error) {
@@ -568,7 +607,7 @@ func routeSchemas(route routes.Route) []routes.SchemaRef {
 		count += len(route.RequestBody.Content)
 	}
 	for _, response := range route.Responses {
-		count += len(response.Content)
+		count += len(response.Content) + len(response.Headers)
 	}
 	out := make([]routes.SchemaRef, 0, count)
 	for _, param := range route.Parameters {
@@ -581,6 +620,9 @@ func routeSchemas(route routes.Route) []routes.SchemaRef {
 	}
 	for _, status := range slices.Sorted(maps.Keys(route.Responses)) {
 		response := route.Responses[status]
+		for _, name := range slices.Sorted(maps.Keys(response.Headers)) {
+			out = append(out, response.Headers[name].Schema)
+		}
 		for _, mediaType := range slices.Sorted(maps.Keys(response.Content)) {
 			out = append(out, response.Content[mediaType])
 		}

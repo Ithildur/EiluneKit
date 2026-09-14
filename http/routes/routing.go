@@ -78,29 +78,43 @@ func (r Route) Clone() Route {
 // Mount 在 r 上注册路由。
 // Mount 不会修改 routes。
 func Mount(r chi.Router, prefix string, routes []Route) error {
+	return MountWithOptions(r, prefix, routes, MountOptions{})
+}
+
+// MountOptions configures the runtime authentication guard.
+// MountOptions 配置运行时认证保护。
+type MountOptions struct {
+	// Unauthorized handles requests without an authenticated marker on required routes.
+	// Nil preserves the default JSON 401 response. It cannot grant access to the endpoint.
+	// Unauthorized 处理必需认证路由中缺少认证标记的请求。
+	// Nil 保留默认 JSON 401 响应；该 handler 不能放行到端点。
+	Unauthorized http.Handler
+}
+
+// MountWithOptions registers routes with an application-supplied authentication failure response.
+// Route middleware must still mark successful authentication with WithAuthenticated.
+// MountWithOptions 注册路由并允许应用提供认证失败响应。
+// 路由中间件仍须在认证成功后调用 WithAuthenticated。
+func MountWithOptions(r chi.Router, prefix string, routes []Route, opts MountOptions) error {
 	if r == nil {
 		return fmt.Errorf("routes: nil chi.Router")
 	}
 
 	p := cleanPrefix(prefix)
 	if p == "" {
-		return mountRoutes(r, routes)
+		return mountRoutesAt(r, "", routes, opts)
 	}
 
 	var mountErr error
 	r.Route(p, func(r chi.Router) {
-		if err := mountRoutesAt(r, p, routes); err != nil && mountErr == nil {
+		if err := mountRoutesAt(r, p, routes, opts); err != nil && mountErr == nil {
 			mountErr = err
 		}
 	})
 	return mountErr
 }
 
-func mountRoutes(r chi.Router, routes []Route) error {
-	return mountRoutesAt(r, "", routes)
-}
-
-func mountRoutesAt(r chi.Router, prefix string, routes []Route) error {
+func mountRoutesAt(r chi.Router, prefix string, routes []Route, opts MountOptions) error {
 	seen := make(map[string]struct{}, len(routes))
 
 	for i, raw := range routes {
@@ -126,7 +140,7 @@ func mountRoutesAt(r chi.Router, prefix string, routes []Route) error {
 		switch auth := effectiveAuth(raw.Auth); auth {
 		case AuthPublic, AuthOptional:
 		case AuthRequired:
-			handler = requireAuthenticated(handler)
+			handler = requireAuthenticated(handler, opts.Unauthorized)
 		default:
 			return fmt.Errorf("routes: route[%d] %s %s: unsupported auth requirement %q", i, method, fullPath, auth)
 		}

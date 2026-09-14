@@ -78,6 +78,39 @@ func remote(w http.ResponseWriter, r *http.Request, remoteID string) {
 
 `AuthPublic`、`AuthOptional` 和 `AuthRequired` 会导出为路由元数据。`Mount` 也会在运行时保护 `AuthRequired` 路由，所以认证中间件必须在认证成功后调用 `routes.WithAuthenticated` 标记请求。
 
+## 应用认证接入
+
+内置 `auth/http` 和 `auth/rbac/http` 是可选模块。路由注册不要求使用它们的 token manager、JWT claims 或 principal。应用继续拥有登录端点、会话生命周期、CSRF 检查、授权和事务边界。
+
+传入标准中间件，只在应用认证检查成功后标记请求：
+
+```go
+func authenticate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, err := sessions.Authenticate(r)
+		if err != nil {
+			writeAuthError(w, r, err)
+			return
+		}
+		ctx := withPrincipal(r.Context(), principal)
+		next.ServeHTTP(w, r.WithContext(routes.WithAuthenticated(ctx)))
+	})
+}
+
+api := routes.NewBlueprint(
+	routes.DefaultAuth(routes.AuthRequired),
+	routes.DefaultMiddleware(authenticate),
+)
+api.Get("/account", "Current account", accountHandler)
+err := routes.MountWithOptions(router, "", api.RoutesAt("/api"), routes.MountOptions{
+	Unauthorized: http.HandlerFunc(writeUnauthorized),
+})
+```
+
+这里的 `sessions`、`withPrincipal` 和响应 handler 由应用提供。`MountOptions.Unauthorized` 控制必需认证路由缺少标记时的保护响应；它不会覆盖认证中间件已经写出的响应，也不能继续执行端点。Nil 保留默认 JSON 401。现有挂载函数保持默认行为。
+
+`AuthPublic` 和 `AuthOptional` 不会移除已经附加的中间件。登录端点应单独挂载，或使用未附加必需认证中间件的公开 blueprint。`AuthRequired` 只证明已认证；资源授权仍由应用负责。OpenAPI security 元数据需要独立声明实际使用的 cookie/header/Bearer 方案。
+
 ## 底层用法
 
 ```go
@@ -112,7 +145,28 @@ spec, err := openapi.Generate(routeList, openapi.Options{
 })
 ```
 
-每个生成的 operation 必须显式提供全局唯一的 `OperationID` 和至少一个响应。path 参数、请求体、响应体和 security 通过路由 option 声明。具名 `SchemaOf` 会生成稳定的 component，Go JSON 形状定义对应的 wire schema。
+每个生成的 operation 必须显式提供全局唯一的 `OperationID` 和至少一个响应。path 参数、请求体、响应体和 security 通过路由 option 声明。具名 `SchemaOf` 会生成稳定的 component。
+
+应用类型的自定义 JSON 编码与反射结果不同时，使用 `JSONSchemaAlias() any` 描述 wire 类型。例如，编码为十进制 JSON string 的数量类型：
+
+```go
+func (ByteQuantity) JSONSchemaAlias() any { return "" }
+```
+
+该方法只描述 schema 类型，不改变 JSON 编码，也不执行运行时验证。生成的 schema 应以真实编码后的 payload 校验，尤其是使用自定义 marshaler 时。
+
+响应头通过 `routes.Response.Headers` 声明，可以使用具名 schema：
+
+```go
+routes.Respond("204", routes.Response{
+	Description: "Completed",
+	Headers: map[string]routes.Header{
+		"X-Request-ID": {Required: true, Schema: routes.SchemaOf[string]("")},
+	},
+})
+```
+
+响应头名称必须是合法 HTTP token，并且忽略大小写后唯一。`Content-Type` 通过 `Response.Content` 声明，不放入 `Headers`。响应头声明只描述契约；实际 header 仍由 handler 写入。
 
 生成的 JSON 可交给任意兼容 OpenAPI 3.1 的 TypeScript 类型和 client 生成器；Kit 不内置 TypeScript 生成器。
 

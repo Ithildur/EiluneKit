@@ -16,6 +16,7 @@ go get github.com/Ithildur/EiluneKit@latest
 
 - `auth` 提供通用 principal 辅助和与传输层无关的认证流程。`auth/http` 将默认 session auth flow 适配到 HTTP；`auth/rbac` 和 `auth/rbac/http` 处理多用户 JSON bearer 认证。
 - `http/routes` 让路由元数据贴着 handler。`Route` 是数据模型；推荐用 `Blueprint` 构建。
+- 内置 auth 是可选模块。应用可以使用自己的中间件、主体、会话和登录路由，见[应用认证接入](http/routes/README_CN.md#应用认证接入)。
 - `tools/openapi` 可选地把最终路由元数据生成经过校验的 OpenAPI 3.1 JSON。handler 仍是普通 `net/http` handler，不做运行时 schema 校验。
 - `http/static` 从项目内相对路径（例如 `dist`、`web/dist`）挂载静态文件和 SPA。
 - `postgres/migration` 使用 Goose 显式执行 Postgres 迁移，并提供 session advisory lock，以及待执行迁移和超前 schema 检查。

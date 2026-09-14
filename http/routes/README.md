@@ -78,6 +78,39 @@ func remote(w http.ResponseWriter, r *http.Request, remoteID string) {
 
 `AuthPublic`, `AuthOptional`, and `AuthRequired` are exported as route metadata. `Mount` also guards `AuthRequired` routes at runtime, so auth middleware must mark successful requests with `routes.WithAuthenticated`.
 
+## Application Authentication
+
+Built-in `auth/http` and `auth/rbac/http` are optional. Route registration does not require their token managers, JWT claims, or principals. Applications retain their own login endpoints, session lifecycle, CSRF checks, authorization, and transaction boundaries.
+
+Supply a standard middleware and mark the request only after the application's authentication checks have succeeded:
+
+```go
+func authenticate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, err := sessions.Authenticate(r)
+		if err != nil {
+			writeAuthError(w, r, err)
+			return
+		}
+		ctx := withPrincipal(r.Context(), principal)
+		next.ServeHTTP(w, r.WithContext(routes.WithAuthenticated(ctx)))
+	})
+}
+
+api := routes.NewBlueprint(
+	routes.DefaultAuth(routes.AuthRequired),
+	routes.DefaultMiddleware(authenticate),
+)
+api.Get("/account", "Current account", accountHandler)
+err := routes.MountWithOptions(router, "", api.RoutesAt("/api"), routes.MountOptions{
+	Unauthorized: http.HandlerFunc(writeUnauthorized),
+})
+```
+
+Here `sessions`, `withPrincipal`, and the response handlers belong to the application. `MountOptions.Unauthorized` controls the guard response when a required route is reached without the marker; it does not override responses already written by authentication middleware and cannot continue to the endpoint. Nil preserves the default JSON 401. Existing mount functions keep their default behavior.
+
+`AuthPublic` and `AuthOptional` do not remove attached middleware. Mount login endpoints separately or use a public blueprint without required-auth middleware. `AuthRequired` proves authentication only; resource authorization stays with the application. OpenAPI security metadata must describe the actual cookie/header/Bearer scheme independently.
+
 ## Lower Level
 
 ```go
@@ -112,7 +145,28 @@ spec, err := openapi.Generate(routeList, openapi.Options{
 })
 ```
 
-Each generated operation requires an explicit, globally unique `OperationID` and at least one response. Path parameters, request bodies, response bodies, and security are declared with route options. Named `SchemaOf` values become stable components, and Go JSON shapes define their wire schemas.
+Each generated operation requires an explicit, globally unique `OperationID` and at least one response. Path parameters, request bodies, response bodies, and security are declared with route options. Named `SchemaOf` values become stable components.
+
+For application types whose custom JSON encoding differs from reflection, use `JSONSchemaAlias() any` to describe the wire type. For a quantity encoded as a decimal JSON string:
+
+```go
+func (ByteQuantity) JSONSchemaAlias() any { return "" }
+```
+
+The method describes the schema type and does not change JSON encoding or perform runtime validation. Validate generated schemas against real encoded payloads, especially for custom marshalers.
+
+Response headers are declared on `routes.Response.Headers` and can use named schemas:
+
+```go
+routes.Respond("204", routes.Response{
+	Description: "Completed",
+	Headers: map[string]routes.Header{
+		"X-Request-ID": {Required: true, Schema: routes.SchemaOf[string]("")},
+	},
+})
+```
+
+Header names must be valid HTTP tokens and unique ignoring case. Declare `Content-Type` through `Response.Content`, not `Headers`. Header declarations describe the contract; handlers remain responsible for writing the actual headers.
 
 Feed the resulting JSON to any OpenAPI 3.1-compatible TypeScript type and client generator. Kit does not bundle a TypeScript generator.
 
