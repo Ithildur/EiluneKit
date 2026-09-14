@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.3.1 - 2026-09-14
+
+### Breaking
+
+- `routes.Response` has a new optional `Headers` field. Callers using positional composite literals must switch to keyed fields. Existing keyed literals and default behavior are unchanged.
+- pgx `Rows` now requires `TypeMap() *pgtype.Map`; custom implementations and mocks must add it.
+- pgx connection-string parsing now follows libpq more closely: URI query `+` is literal, repeated parameters use the last value, and keyword/value backslashes require escaping. On Unix, default credential and TLS file locations now use `$HOME`.
+- pgx date/time codecs reject invalid or out-of-range values. Text `timestamptz` decoding now uses `time.Local` or the configured `ScanLocation`, which can change serialized offsets without changing the instant. Set `ScanLocation` to `time.UTC` for a fixed zone. Numeric infinities now serialize as JSON strings `"Infinity"` and `"-Infinity"` instead of zero. See the [pgx v5.11.0 migration details](https://github.com/jackc/pgx/releases/tag/v5.11.0).
+
+### Added
+
+- Added `routes.MountWithOptions` with an application-owned unauthorized handler. Custom authentication middleware continues to use `routes.WithAuthenticated` without adopting Kit token managers, JWT claims, or principals. Existing mount functions retain the default JSON 401 guard.
+- Added `routes.Response.Headers` and `routes.Header` for OpenAPI response header contracts, with case-insensitive duplicate detection and named schema support.
+
+### Changed
+
+- Updated Goose from v3.27.3 to v3.28.0.
+- Updated pgx from v5.10.0 to v5.11.0, including Go 1.27 `database/sql` support for directly scanning PostgreSQL arrays and ranges.
+
+### Fixed
+
+- GORM connection initialization now uses the caller's context for its connection check, avoids the automatic context-free ping, and closes the SQL pool on verification failure.
+
+### Security
+
+- pgx now rejects NUL bytes in startup parameters and improves password redaction in connection-string errors. Redaction of malformed connection strings remains best effort.
+
 ## v0.3.0 - 2026-09-13
 
 ### Breaking
