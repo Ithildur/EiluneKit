@@ -4,6 +4,7 @@ import (
 	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/Ithildur/EiluneKit/http/response"
@@ -40,5 +41,27 @@ func TestMethodNotAllowedResponder_EmitsAllowAndJSON(t *testing.T) {
 	}
 	if payload.Message != "method not allowed" {
 		t.Fatalf("expected message method not allowed, got %q", payload.Message)
+	}
+}
+
+func TestAllowedMethodsPreservesRequestRoute(t *testing.T) {
+	mux := chi.NewRouter()
+	mux.Get("/files/{id}", func(w http.ResponseWriter, r *http.Request) {
+		before := chi.RouteContext(r.Context()).RoutePattern()
+		allowed := AllowedMethodsForRoute(mux, r)
+		if !slices.Equal(allowed, []string{http.MethodGet, http.MethodPut, http.MethodDelete}) {
+			t.Errorf("unexpected allowed methods: %v", allowed)
+		}
+		if chi.URLParam(r, "id") != "42" || chi.RouteContext(r.Context()).RoutePattern() != before {
+			t.Error("method probing changed the request route")
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.Put("/files/{id:[0-9]+}", func(http.ResponseWriter, *http.Request) {})
+	mux.Delete("/files/*", func(http.ResponseWriter, *http.Request) {})
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/files/42", nil))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("unexpected status: %d", w.Code)
 	}
 }

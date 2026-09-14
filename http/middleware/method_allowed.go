@@ -41,8 +41,9 @@ func AllowedMethodsForRoute(routes chi.Routes, r *http.Request) []string {
 	}
 
 	allowed := make([]string, 0, len(allowMethodOrder))
+	tctx := chi.NewRouteContext()
 	for _, method := range allowMethodOrder {
-		tctx := chi.NewRouteContext()
+		tctx.Reset()
 		if routes.Match(tctx, method, routePath) {
 			allowed = append(allowed, method)
 		}

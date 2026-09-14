@@ -47,16 +47,17 @@ func AccessLog(opts AccessLogOptions) func(http.Handler) http.Handler {
 			}
 
 			level := levelForStatus(status)
-			if level < opts.MinLevel {
+			if level < opts.MinLevel || !opts.Logger.Enabled(r.Context(), level) {
 				return
 			}
 
-			attrs := []slog.Attr{
+			attrs := make([]slog.Attr, 0, 7)
+			attrs = append(attrs,
 				slog.String("method", r.Method),
 				slog.String("path", r.URL.Path),
 				slog.Int("status", status),
 				slog.Int64("latency_ms", time.Since(start).Milliseconds()),
-			}
+			)
 			if reqID := middleware.GetReqID(r.Context()); reqID != "" {
 				attrs = append(attrs, slog.String("request_id", reqID))
 			}
