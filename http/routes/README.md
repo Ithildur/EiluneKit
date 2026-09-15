@@ -1,12 +1,59 @@
 # http/routes
 
-`http/routes` keeps route metadata next to handlers and mounts the result on `chi`.
+`http/routes` keeps route metadata next to handlers and builds a standard HTTP handler backed by `chi`.
 
 ## Usage
 
-Use `routes.Blueprint` to declare handlers, metadata, tags, and middleware. Use `routes.Route` and `routes.Mount` when working directly with route slices or arbitrary `http.Handler` values.
+Use `routes.Blueprint` to declare and compose endpoints, then pass the final route list to `routes.NewHandler`. `routes.Route` also accepts arbitrary `http.Handler` values. `routes.Mount` and `routes.Router` remain available for applications that manage an existing chi router or aggregate route slices directly.
 
 `Blueprint` methods take `path`, `summary`, a handler function or method value, then route options.
+
+## Complete HTTP handler
+
+Use `NewHandler` to build a standard `http.Handler` without creating a chi router in application code. Declare and include routes first, then pass their final paths to the constructor:
+
+```go
+root := routes.NewBlueprint()
+root.Include("/api", api)
+
+handler, err := routes.NewHandler(root.Routes(), routes.HandlerOptions{
+	Middleware: []routes.Middleware{
+		middleware.RequestID,
+		middleware.AccessLog(middleware.AccessLogOptions{Logger: logger}),
+		middleware.Recover(middleware.RecoverOptions{Logger: logger}),
+		apiBoundary,
+	},
+	NotFound:         http.HandlerFunc(notFound),
+	MethodNotAllowed: http.HandlerFunc(methodNotAllowed),
+	Unauthorized:     http.HandlerFunc(unauthorized),
+})
+if err != nil {
+	return err
+}
+
+server := &http.Server{
+	Addr:              ":8080",
+	Handler:           handler,
+	ReadHeaderTimeout: 5 * time.Second,
+}
+```
+
+`api`, `apiBoundary`, and the failure handlers are application-owned. The constructor creates one flat chi router and uses the same validation, conflict checks, and authentication guard as `MountWithOptions`. Invalid declarations return errors or panic as documented below. No middleware is installed automatically.
+
+For optional JSON failure handlers and examples of replacing presets or adding business errors, see [http/response](../response/README.md).
+
+| Option | Contract |
+|---|---|
+| `Middleware` | Runs in declaration order, outermost first; exits in reverse order. Wraps successful and unmatched requests, even with an empty route table. Nil entries are ignored. |
+| `NotFound` | Receives unmatched paths; nil uses the standard plain-text 404. |
+| `MethodNotAllowed` | Receives method mismatches after `Allow` is set from matching registered methods in alphabetical order. Nil returns an empty 405. HEAD and OPTIONS are not inferred from GET. |
+| `Unauthorized` | Same contract as `MountOptions.Unauthorized`; nil retains the JSON 401 guard. |
+
+Construct the handler during startup. Later changes to the supplied slices do not reconfigure it; application handlers and middleware must themselves be safe for concurrent requests.
+
+Put request-boundary policies in `HandlerOptions.Middleware`. For an API-only policy, the application middleware should match `/api` or the `/api/` prefix before applying cache headers or `LimitBody`. `DefaultMiddleware` and `IncludeMiddleware` wrap endpoints only and do not cover routing failures. Body limits apply when reading; they do not pre-read a body or automatically replace 404/405 with 413.
+
+Use `NotFound` for SPA fallback rather than registering a global `/*` alongside API endpoints. The application's failure handler decides which paths receive JSON errors, static files, or pages. This keeps fallback out of method matching and conflict checks. For reusable middleware, see [http/middleware](../middleware/README.md).
 
 ## Paths
 

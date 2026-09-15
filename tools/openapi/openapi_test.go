@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json/v2"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
@@ -29,12 +30,20 @@ func TestGeneratePreservesTrailingSlash(t *testing.T) {
 		{"", "getAPI"},
 		{"/", "getAPIRoot"},
 	} {
-		child.Get(route.path, "", func(http.ResponseWriter, *http.Request) {},
+		child.Get(route.path, "", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Operation", route.operation)
+			w.WriteHeader(http.StatusNoContent)
+		},
 			routes.OperationID(route.operation), routes.EmptyResponse(http.StatusNoContent, "Success"))
 	}
 	api := routes.NewBlueprint()
 	api.Include("/api", child)
-	payload, err := openapi.Generate(api.Routes(), openapi.Options{Title: "API", Version: "1.0.0"})
+	finalRoutes := api.Routes()
+	handler, err := routes.NewHandler(finalRoutes, routes.HandlerOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := openapi.Generate(finalRoutes, openapi.Options{Title: "API", Version: "1.0.0"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,6 +57,13 @@ func TestGeneratePreservesTrailingSlash(t *testing.T) {
 	}
 	if len(doc.Paths) != 2 || doc.Paths["/api"]["get"].OperationID != "getAPI" || doc.Paths["/api/"]["get"].OperationID != "getAPIRoot" {
 		t.Fatalf("unexpected paths: %s", payload)
+	}
+	for path, methods := range doc.Paths {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Code != http.StatusNoContent || w.Header().Get("X-Operation") != methods["get"].OperationID {
+			t.Errorf("runtime route differs from OpenAPI at %s: status %d, operation %q", path, w.Code, w.Header().Get("X-Operation"))
+		}
 	}
 }
 

@@ -15,7 +15,7 @@ go get github.com/Ithildur/EiluneKit@latest
 ## 设计
 
 - `auth` 提供通用 principal 辅助和与传输层无关的认证流程。`auth/http` 将默认 session auth flow 适配到 HTTP；`auth/rbac` 和 `auth/rbac/http` 处理多用户 JSON bearer 认证。
-- `http/routes` 让路由元数据贴着 handler。`Route` 是数据模型；推荐用 `Blueprint` 构建。
+- `http/routes` 让路由元数据贴着 handler。`Route` 是数据模型；推荐用 `Blueprint` 构建。`NewHandler` 接收应用提供的中间件和失败响应，构建完整 HTTP handler。
 - 内置 auth 是可选模块。应用可以使用自己的中间件、主体、会话和登录路由，见[应用认证接入](http/routes/README_CN.md#应用认证接入)。
 - `tools/openapi` 可选地把最终路由元数据生成经过校验的 OpenAPI 3.1 JSON。handler 仍是普通 `net/http` handler，不做运行时 schema 校验。
 - `http/static` 从项目内相对路径（例如 `dist`、`web/dist`）挂载静态文件和 SPA。
@@ -56,7 +56,9 @@ if err := authHandler.Register(r); err != nil {
 
 从包文档开始：
 
-- `http/routes/README_CN.md`：路由声明、`Blueprint` 和更底层的 `Route`/`Mount`
+- `http/routes/README_CN.md`：路由声明、`Blueprint`、`NewHandler` 和更底层的 `Route`/`Mount`
+- `http/middleware/README_CN.md`：请求 ID、恢复、CORS、压缩、访问日志和限制
+- [http/response/README_CN.md](http/response/README_CN.md)：JSON 错误预设、覆盖和新增业务 handler
 - `auth/http/README_CN.md`：面向 `chi` 的单用户 cookie 认证端点和 Bearer 中间件
 - `auth/rbac/http/README_CN.md`：多用户 JSON bearer 认证端点和角色 / scope 中间件
 - `postgres/README_CN.md`：GORM、pgx 连接辅助和显式 schema 迁移
@@ -73,8 +75,8 @@ if err := authHandler.Register(r); err != nil {
 - `auth/store`：session / token 状态接口与 memory store
 - `auth/store/redissession`：Redis 版认证 session store
 - `http/decoder`：JSON 请求解码辅助
-- `http/middleware`：RequireJSONBody、访问日志、限流和 404/405 辅助
-- `http/response`：JSON 响应辅助
+- `http/middleware`：请求 ID、恢复、CORS、压缩、RequireJSONBody、访问日志和限制
+- `http/response`：JSON 写入函数和可选错误 handler
 - `http/routes`：声明式路由、请求与响应契约和运行时挂载
 - `http/static`：静态文件与 SPA 挂载辅助
 - `postgres/dbtypes`：薄数据库类型别名
@@ -98,6 +100,10 @@ if err := authHandler.Register(r); err != nil {
 - `auth/rbac/http/README_CN.md`
 - `http/routes/README.md`
 - `http/routes/README_CN.md`
+- `http/middleware/README.md`
+- `http/middleware/README_CN.md`
+- `http/response/README.md`
+- `http/response/README_CN.md`
 - `postgres/README.md`
 - `postgres/README_CN.md`
 - `redis/README.md`

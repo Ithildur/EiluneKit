@@ -1,12 +1,59 @@
 # http/routes
 
-`http/routes` 让路由元数据贴着 handler，并把结果挂载到 `chi`。
+`http/routes` 让路由元数据贴着 handler，并构建由 `chi` 驱动的标准 HTTP handler。
 
 ## 使用
 
-使用 `routes.Blueprint` 声明 handler、元数据、tags 和中间件。直接操作路由切片或任意 `http.Handler` 时，使用 `routes.Route` 和 `routes.Mount`。
+使用 `routes.Blueprint` 声明和组合端点，再将最终路由列表交给 `routes.NewHandler`。`routes.Route` 也接受任意 `http.Handler`。应用需要管理已有 chi 路由器或直接汇总路由切片时，仍可使用 `routes.Mount` 和 `routes.Router`。
 
 `Blueprint` 方法依次接收 `path`、`summary`、handler 函数或方法值，以及路由选项。
+
+## 完整 HTTP handler
+
+使用 `NewHandler` 构建标准 `http.Handler`，应用代码不需要创建 chi 路由器。先声明和组合路由，再将最终路径传入构造函数：
+
+```go
+root := routes.NewBlueprint()
+root.Include("/api", api)
+
+handler, err := routes.NewHandler(root.Routes(), routes.HandlerOptions{
+	Middleware: []routes.Middleware{
+		middleware.RequestID,
+		middleware.AccessLog(middleware.AccessLogOptions{Logger: logger}),
+		middleware.Recover(middleware.RecoverOptions{Logger: logger}),
+		apiBoundary,
+	},
+	NotFound:         http.HandlerFunc(notFound),
+	MethodNotAllowed: http.HandlerFunc(methodNotAllowed),
+	Unauthorized:     http.HandlerFunc(unauthorized),
+})
+if err != nil {
+	return err
+}
+
+server := &http.Server{
+	Addr:              ":8080",
+	Handler:           handler,
+	ReadHeaderTimeout: 5 * time.Second,
+}
+```
+
+`api`、`apiBoundary` 和失败响应 handler 由应用提供。构造函数创建一个扁平的 chi 路由器，复用 `MountWithOptions` 的校验、冲突检查和认证保护。无效声明按下文契约返回错误或 panic。不会自动安装任何中间件。
+
+可选的 JSON 失败响应、覆盖预设和新增业务错误范例见 [http/response](../response/README_CN.md)。
+
+| 配置 | 契约 |
+|---|---|
+| `Middleware` | 按声明顺序从外向内执行，反向退出。覆盖成功和未匹配请求，也覆盖空路由表；忽略 nil 项。 |
+| `NotFound` | 接收未匹配的路径；nil 使用标准纯文本 404。 |
+| `MethodNotAllowed` | 接收方法不匹配的请求；调用前根据匹配的已注册方法设置 Allow，按字母顺序排列。nil 返回无响应体的 405；不会从 GET 推断 HEAD 或 OPTIONS。 |
+| `Unauthorized` | 与 `MountOptions.Unauthorized` 相同；nil 保留 JSON 401 保护。 |
+
+在启动阶段构建 handler。后续修改传入的切片不会重新配置 handler；应用提供的 handler 和中间件本身必须支持并发请求。
+
+请求边界策略放入 `HandlerOptions.Middleware`。仅针对 API 的策略应由应用中间件匹配 `/api` 或 `/api/` 前缀，再设置缓存响应头或应用 `LimitBody`。`DefaultMiddleware` 和 `IncludeMiddleware` 只包装端点，不覆盖路由匹配失败。请求体上限在读取时生效，不预读请求体，也不会自动将 404/405 替换为 413。
+
+SPA 兜底应通过 `NotFound` 接入，不要在 API 端点旁注册全局 `/*`。应用的失败响应 handler 决定哪些路径返回 JSON 错误、静态文件或页面，使兜底不参与方法匹配和路由冲突检查。可复用中间件见 [http/middleware](../middleware/README_CN.md)。
 
 ## 路径
 

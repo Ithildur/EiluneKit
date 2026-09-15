@@ -159,17 +159,18 @@ func MountWithOptions(r chi.Router, prefix string, routes []Route, opts MountOpt
 	}
 
 	for _, rt := range prepared {
-		handler := rt.Handler
-
-		for _, middleware := range slices.Backward(rt.Middleware) {
-			if middleware != nil {
-				handler = middleware(handler)
-			}
-		}
-
-		r.Method(rt.Method, rt.Path, handler)
+		r.Method(rt.Method, rt.Path, wrap(rt.Handler, rt.Middleware))
 	}
 	return nil
+}
+
+func wrap(handler http.Handler, middleware []Middleware) http.Handler {
+	for _, mw := range slices.Backward(middleware) {
+		if mw != nil {
+			handler = mw(handler)
+		}
+	}
+	return handler
 }
 
 func normalizeRoute(methodRaw, pathRaw string) (string, string, error) {

@@ -15,7 +15,7 @@ Requires Go 1.27.1 or newer.
 ## Design
 
 - `auth` owns shared principal helpers and transport-neutral auth flows. `auth/http` adapts the default session auth flow to HTTP; `auth/rbac` and `auth/rbac/http` handle multi-user JSON bearer auth.
-- `http/routes` keeps route metadata next to handlers. `Route` is the data model; `Blueprint` is the recommended builder.
+- `http/routes` keeps route metadata next to handlers. `Route` is the data model; `Blueprint` is the recommended builder. `NewHandler` builds a complete HTTP handler with application-supplied middleware and failure responses.
 - Built-in auth is optional. Applications can use their own middleware, principals, sessions, and login routes; see [application authentication](http/routes/README.md#application-authentication).
 - `tools/openapi` optionally turns final route metadata into validated OpenAPI 3.1 JSON. Handlers remain ordinary `net/http` handlers without runtime schema validation.
 - `http/static` mounts static files and SPA handlers from project-relative paths such as `dist` or `web/dist`.
@@ -56,7 +56,9 @@ This uses in-process session storage for one process; sessions are not shared ac
 
 Start with the package docs:
 
-- `http/routes/README.md`: route declarations, `Blueprint`, and lower-level `Route`/`Mount`
+- `http/routes/README.md`: route declarations, `Blueprint`, `NewHandler`, and lower-level `Route`/`Mount`
+- `http/middleware/README.md`: request IDs, recovery, CORS, compression, access logging, and limits
+- [http/response/README.md](http/response/README.md): JSON error presets, overrides, and custom business handlers
 - `auth/http/README.md`: single-user cookie auth endpoints and bearer middleware for `chi`
 - `auth/rbac/http/README.md`: multi-user JSON bearer auth endpoints and role/scope middleware
 - `postgres/README.md`: GORM and pgx connection helpers, plus explicit schema migrations
@@ -73,8 +75,8 @@ Start with the package docs:
 - `auth/store`: session and token state interfaces and memory store
 - `auth/store/redissession`: Redis-backed auth session store
 - `http/decoder`: JSON request decoding helpers
-- `http/middleware`: JSON-only guards, access logging, rate limits, and 404/405 helpers
-- `http/response`: JSON response helpers
+- `http/middleware`: request IDs, recovery, CORS, compression, JSON-only guards, access logging, and limits
+- `http/response`: JSON writers and optional error handlers
 - `http/routes`: declarative routes, request and response contracts, and runtime mounting
 - `http/static`: static file and SPA mounting helpers
 - `postgres/dbtypes`: thin database type aliases
@@ -98,6 +100,10 @@ Start with the package docs:
 - `auth/rbac/http/README_CN.md`
 - `http/routes/README.md`
 - `http/routes/README_CN.md`
+- `http/middleware/README.md`
+- `http/middleware/README_CN.md`
+- `http/response/README.md`
+- `http/response/README_CN.md`
 - `postgres/README.md`
 - `postgres/README_CN.md`
 - `redis/README.md`
