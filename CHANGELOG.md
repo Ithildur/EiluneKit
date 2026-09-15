@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.4.2 - 2026-09-15
+
+### Breaking
+
+- Removed `middleware.NotFoundHandler`, `MethodNotAllowedResponder`, and `AllowedMethodsForRoute`. Applications own API-prefix selection and error responses: inject handlers through `routes.HandlerOptions.NotFound` and `MethodNotAllowed`. `routes.NewHandler` sets `Allow` from matching registered methods, including custom methods, before invoking the 405 handler. Direct chi integrations must own their failure handlers and allowed-method policy.
+- `middleware.RequireJSONBody` rejects malformed media-type parameters with 415 instead of ignoring them. Send a valid `application/json` media type with optional valid parameters.
+
+### Added
+
+- `response.NotFound`, `MethodNotAllowed`, `Unauthorized`, and `InternalServerError` return optional JSON error handlers for explicit injection. Applications can replace individual handlers or add business error handlers using `WriteJSONError` without global registration.
+- `routes.NewHandler` and `routes.HandlerOptions` build a complete HTTP handler from final route paths, with ordered request-wide middleware and injectable 404, 405, and authentication failure responses. Middleware also covers unmatched requests and empty route tables; 405 callbacks receive `Allow` derived from matching registered methods.
+- Optional `middleware.RequestID`, `RequestIDFromContext`, `Recover`, `CORS`, and `Compress` provide request correlation, configurable panic logging and responses, explicit cross-origin permissions, and streaming gzip compression. No middleware is installed automatically.
+
+### Fixed
+
+- `middleware.AccessLog` records requests that exit through panic, including `http.ErrAbortHandler`, at error level with `aborted: true`. Records preserve the observed final status or use `0` when none was observed; `Skip` and `MinLevel` still apply. Normal response records and panic propagation are unchanged.
+- `middleware.AccessLog` and `Recover` preserve the underlying `ReadFrom` transfer path once the response has started, including static file responses, while allowing recovery after an empty copy before headers.
+- `middleware.Recover` clears the pending `Content-Length` before invoking a custom panic response so it can write a complete replacement body.
+- `middleware.RequireJSONBody` accepts whitespace before media-type parameters and keeps a direct path for `application/json`.
+- SPA history fallback applies only to missing paths. Filesystem permission and I/O errors use the file server's error response instead of serving the index page.
+
 ## v0.4.1 - 2026-09-15
 
 ### Breaking
