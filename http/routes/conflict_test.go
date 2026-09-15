@@ -272,60 +272,50 @@ func TestMountChecksEveryExistingParameterName(t *testing.T) {
 }
 
 func TestMountValidationLeavesBatchUnregistered(t *testing.T) {
-	for _, test := range []struct {
+	type testCase struct {
 		route routes.Route
 		want  string
-	}{
-		{routes.Route{Method: http.MethodGet, Path: "/nil"}, "routes: route[1] GET /nil: nil handler"},
-		{routes.Route{Method: http.MethodGet, Path: "/typed-nil", Handler: (*http.ServeMux)(nil)}, "routes: route[1] GET /typed-nil: nil handler"},
-		{routes.Route{Method: http.MethodGet, Path: "/auth", Auth: "invalid", Handler: http.NotFoundHandler()}, `routes: route[1] GET /auth: unsupported auth requirement "invalid"`},
-	} {
-		t.Run(test.route.Path, func(t *testing.T) {
-			mux := chi.NewRouter()
-			err := routes.Mount(mux, "", []routes.Route{
-				{Method: http.MethodGet, Path: "/new", Handler: http.NotFoundHandler()},
-				test.route,
-			})
-			if err == nil || err.Error() != test.want {
-				t.Fatalf("error = %v, want %q", err, test.want)
-			}
-			if len(mux.Routes()) != 0 {
-				t.Fatal("validation failure registered part of the batch")
-			}
-		})
 	}
-}
-
-func TestMountInvalidSyntaxLeavesBatchUnregistered(t *testing.T) {
-	for _, test := range []struct {
-		route routes.Route
-		want  string
+	for _, group := range []struct {
+		name   string
+		panics bool
+		cases  []testCase
 	}{
-		{routes.Route{Method: "INVALID", Path: "/method", Handler: http.NotFoundHandler()}, "chi: 'INVALID' http method is not supported."},
-		{routes.Route{Method: http.MethodGet, Path: "/files*/tail", Handler: http.NotFoundHandler()}, "chi: wildcard '*' must be the last value in a route. trim trailing text or use a '{param}' instead"},
-		{routes.Route{Method: http.MethodGet, Path: "/{id:[}", Handler: http.NotFoundHandler()}, "chi: invalid regexp pattern '^[$' in route param"},
+		{name: "error", cases: []testCase{
+			{routes.Route{Method: http.MethodGet, Path: "/nil"}, "routes: route[1] GET /nil: nil handler"},
+			{routes.Route{Method: http.MethodGet, Path: "/typed-nil", Handler: (*http.ServeMux)(nil)}, "routes: route[1] GET /typed-nil: nil handler"},
+			{routes.Route{Method: http.MethodGet, Path: "/auth", Auth: "invalid", Handler: http.NotFoundHandler()}, `routes: route[1] GET /auth: unsupported auth requirement "invalid"`},
+		}},
+		{name: "panic", panics: true, cases: []testCase{
+			{routes.Route{Method: "INVALID", Path: "/method", Handler: http.NotFoundHandler()}, "chi: 'INVALID' http method is not supported."},
+			{routes.Route{Method: http.MethodGet, Path: "/files*/tail", Handler: http.NotFoundHandler()}, "chi: wildcard '*' must be the last value in a route. trim trailing text or use a '{param}' instead"},
+			{routes.Route{Method: http.MethodGet, Path: "/{id:[}", Handler: http.NotFoundHandler()}, "chi: invalid regexp pattern '^[$' in route param"},
+		}},
 	} {
-		t.Run(test.route.Path, func(t *testing.T) {
-			mux := chi.NewRouter()
-			func() {
-				defer func() {
-					value := recover()
-					message, ok := value.(string)
-					if !ok || message != test.want {
-						t.Fatalf("panic = %#v, want %q", value, test.want)
-					}
+		for _, test := range group.cases {
+			t.Run(group.name+test.route.Path, func(t *testing.T) {
+				mux := chi.NewRouter()
+				var err error
+				var panicValue any
+				func() {
+					defer func() { panicValue = recover() }()
+					err = routes.Mount(mux, "", []routes.Route{
+						{Method: http.MethodGet, Path: "/new", Handler: http.NotFoundHandler()},
+						test.route,
+					})
 				}()
-				if err := routes.Mount(mux, "", []routes.Route{
-					{Method: http.MethodGet, Path: "/new", Handler: http.NotFoundHandler()},
-					test.route,
-				}); err != nil {
-					t.Fatalf("expected syntax panic, got error: %v", err)
+				if group.panics {
+					if message, ok := panicValue.(string); !ok || message != test.want || err != nil {
+						t.Fatalf("panic = %#v, error = %v; want panic %q", panicValue, err, test.want)
+					}
+				} else if panicValue != nil || err == nil || err.Error() != test.want {
+					t.Fatalf("error = %v, panic = %#v; want error %q", err, panicValue, test.want)
 				}
-			}()
-			if len(mux.Routes()) != 0 {
-				t.Fatal("invalid syntax registered part of the batch")
-			}
-		})
+				if len(mux.Routes()) != 0 {
+					t.Fatal("validation failure registered part of the batch")
+				}
+			})
+		}
 	}
 }
 

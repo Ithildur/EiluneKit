@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Ithildur/EiluneKit/http/middleware"
 	"github.com/Ithildur/EiluneKit/http/routes"
 
 	"github.com/go-chi/chi/v5"
@@ -96,166 +95,46 @@ func TestBlueprintRoutesAtComposesPaths(t *testing.T) {
 	}
 }
 
-func TestBlueprintDefaults(t *testing.T) {
+func TestBlueprintComposition(t *testing.T) {
 	var calls []string
-	defaultMW := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			calls = append(calls, "default")
-			next.ServeHTTP(w, r.WithContext(routes.WithAuthenticated(r.Context())))
-		})
+	trace := func(name string) routes.Middleware {
+		return func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls = append(calls, name+" in")
+				next.ServeHTTP(w, r.WithContext(routes.WithAuthenticated(r.Context())))
+				calls = append(calls, name+" out")
+			})
+		}
 	}
-	routeMW := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			calls = append(calls, "route")
-			next.ServeHTTP(w, r)
-		})
-	}
-
-	blueprint := routes.NewBlueprint(
+	child := routes.NewBlueprint(
 		routes.DefaultTags("admin"),
 		routes.DefaultAuth(routes.AuthRequired),
-		routes.DefaultMiddleware(defaultMW),
+		routes.DefaultMiddleware(trace("child")),
 	)
-	blueprint.Get(
-		"/users",
-		"List users",
-		func(w http.ResponseWriter, r *http.Request) {
-			calls = append(calls, "handler")
-			w.WriteHeader(http.StatusNoContent)
-		},
-		routes.Tags("users"),
-		routes.Use(routeMW),
-	)
-	blueprint.Get(
-		"/public",
-		"",
-		func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusNoContent)
-		},
-		routes.Auth(routes.AuthPublic),
-	)
-
-	exportedRoutes := blueprint.Routes()
-	if got, want := len(exportedRoutes), 2; got != want {
-		t.Fatalf("expected %d routes, got %d", want, got)
-	}
-	if !reflect.DeepEqual(exportedRoutes[0].Tags, []string{"admin", "users"}) {
-		t.Fatalf("expected default and route tags, got %#v", exportedRoutes[0].Tags)
-	}
-	if got, want := exportedRoutes[0].Auth, routes.AuthRequired; got != want {
-		t.Fatalf("expected default auth %q, got %q", want, got)
-	}
-	if got, want := exportedRoutes[1].Auth, routes.AuthPublic; got != want {
-		t.Fatalf("expected explicit auth %q, got %q", want, got)
-	}
-
-	r := chi.NewRouter()
-	if err := blueprint.MountAt(r, "/api"); err != nil {
-		t.Fatalf("mount: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/users", nil)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
-	}
-	if !reflect.DeepEqual(calls, []string{"default", "route", "handler"}) {
-		t.Fatalf("unexpected call order: %#v", calls)
-	}
-}
-
-func TestBlueprintIncludeMiddlewarePrependsChildRoutes(t *testing.T) {
-	var calls []string
-	includeMW := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			calls = append(calls, "include")
-			next.ServeHTTP(w, r)
-		})
-	}
-	routeMW := func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			calls = append(calls, "route")
-			next.ServeHTTP(w, r)
-		})
-	}
-
-	child := routes.NewBlueprint()
-	child.Get("/public", "", func(w http.ResponseWriter, r *http.Request) {
+	child.Get("/users", "List users", func(w http.ResponseWriter, r *http.Request) {
 		calls = append(calls, "handler")
 		w.WriteHeader(http.StatusNoContent)
-	}, routes.Use(routeMW))
+	}, routes.Tags("users"), routes.Use(trace("route")))
+	child.Get("/public", "", func(http.ResponseWriter, *http.Request) {}, routes.Auth(routes.AuthPublic))
+	parent := routes.NewBlueprint(routes.DefaultTags("api"), routes.DefaultMiddleware(trace("parent")))
+	parent.Include("/v1", child, routes.IncludeMiddleware(trace("include")))
 
-	parent := routes.NewBlueprint()
-	parent.Include("/child", child, routes.IncludeMiddleware(includeMW))
-
-	exportedRoutes := parent.Routes()
-	if got, want := len(exportedRoutes), 1; got != want {
-		t.Fatalf("expected %d route, got %d", want, got)
+	got := parent.Routes()
+	if len(got) != 2 || got[0].Path != "/v1/users" || got[0].Auth != routes.AuthRequired || got[1].Auth != routes.AuthPublic {
+		t.Fatalf("unexpected routes: %#v", got)
 	}
-	if got, want := exportedRoutes[0].Path, "/child/public"; got != want {
-		t.Fatalf("expected included path %q, got %q", want, got)
+	if !reflect.DeepEqual(got[0].Tags, []string{"api", "admin", "users"}) {
+		t.Fatalf("unexpected tags: %v", got[0].Tags)
 	}
-
-	r := chi.NewRouter()
-	if err := parent.Mount(r); err != nil {
-		t.Fatalf("mount: %v", err)
+	mux := chi.NewRouter()
+	if err := parent.MountAt(mux, "/api"); err != nil {
+		t.Fatal(err)
 	}
-
-	req := httptest.NewRequest(http.MethodGet, "/child/public", nil)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
-	}
-	if !reflect.DeepEqual(calls, []string{"include", "route", "handler"}) {
-		t.Fatalf("unexpected call order: %#v", calls)
-	}
-}
-
-func TestBlueprintIncludeAuthOverridesChildRoutes(t *testing.T) {
-	child := routes.NewBlueprint()
-	child.Get("/public", "", func(w http.ResponseWriter, r *http.Request) {}, routes.Auth(routes.AuthPublic))
-
-	parent := routes.NewBlueprint()
-	parent.Include("/child", child, routes.IncludeAuth(routes.AuthRequired))
-
-	exportedRoutes := parent.Routes()
-	if got, want := len(exportedRoutes), 1; got != want {
-		t.Fatalf("expected %d route, got %d", want, got)
-	}
-	if got, want := exportedRoutes[0].Auth, routes.AuthRequired; got != want {
-		t.Fatalf("expected include auth %q, got %q", want, got)
-	}
-}
-
-func TestMountRequiresAuthenticatedContext(t *testing.T) {
-	called := false
-	r := chi.NewRouter()
-	err := routes.Mount(r, "/api", []routes.Route{
-		{
-			Method: "get",
-			Path:   "/users",
-			Auth:   routes.AuthRequired,
-			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				called = true
-				w.WriteHeader(http.StatusNoContent)
-			}),
-		},
-	})
-	if err != nil {
-		t.Fatalf("mount: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/users", nil)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, rec.Code)
-	}
-	if called {
-		t.Fatal("handler should not be called")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/users", nil))
+	want := []string{"parent in", "include in", "child in", "route in", "handler", "route out", "child out", "include out", "parent out"}
+	if w.Code != http.StatusNoContent || !reflect.DeepEqual(calls, want) {
+		t.Fatalf("status %d, order %v; want %v", w.Code, calls, want)
 	}
 }
 
@@ -267,7 +146,6 @@ func TestMountUsesFinalPaths(t *testing.T) {
 	for _, mount := range []string{"prefix", "expanded", "include", "router"} {
 		t.Run(mount, func(t *testing.T) {
 			mux := chi.NewRouter()
-			mux.MethodNotAllowed(middleware.MethodNotAllowedResponder(mux))
 			var err error
 			switch mount {
 			case "prefix":
@@ -347,24 +225,28 @@ func TestMountRequiresExplicitRootPath(t *testing.T) {
 }
 
 func TestBlueprintIncludeOwnsRoutes(t *testing.T) {
-	child := routes.NewBlueprint()
-	child.Get("/items", "", func(http.ResponseWriter, *http.Request) {}, routes.Tags("child"), routes.Auth(routes.AuthOptional))
-	parent := routes.NewBlueprint(routes.DefaultTags("parent"))
-	parent.Include("/first", child, routes.IncludeTags("included"), routes.IncludeAuth(routes.AuthRequired))
-	parent.Include("/second", child)
-	got := parent.Routes()
-	if got[0].Path != "/first/items" || got[0].Auth != routes.AuthRequired || !reflect.DeepEqual(got[0].Tags, []string{"parent", "child", "included"}) {
-		t.Fatalf("unexpected first route: %#v", got[0])
-	}
-	if got[1].Path != "/second/items" || got[1].Auth != routes.AuthOptional || !reflect.DeepEqual(got[1].Tags, []string{"parent", "child"}) {
-		t.Fatalf("unexpected second route: %#v", got[1])
-	}
-	if original := child.Routes()[0]; original.Path != "/items" || original.Auth != routes.AuthOptional || !reflect.DeepEqual(original.Tags, []string{"child"}) {
-		t.Fatalf("child changed: %#v", original)
-	}
-	parent.Include("/copy", parent)
-	if len(parent.Routes()) != 4 {
-		t.Fatal("self-include did not snapshot existing routes")
+	for _, auth := range []routes.AuthRequirement{routes.AuthPublic, routes.AuthOptional} {
+		t.Run(string(auth), func(t *testing.T) {
+			child := routes.NewBlueprint()
+			child.Get("/items", "", func(http.ResponseWriter, *http.Request) {}, routes.Tags("child"), routes.Auth(auth))
+			parent := routes.NewBlueprint(routes.DefaultTags("parent"))
+			parent.Include("/first", child, routes.IncludeTags("included"), routes.IncludeAuth(routes.AuthRequired))
+			parent.Include("/second", child)
+			got := parent.Routes()
+			if got[0].Path != "/first/items" || got[0].Auth != routes.AuthRequired || !reflect.DeepEqual(got[0].Tags, []string{"parent", "child", "included"}) {
+				t.Fatalf("unexpected first route: %#v", got[0])
+			}
+			if got[1].Path != "/second/items" || got[1].Auth != auth || !reflect.DeepEqual(got[1].Tags, []string{"parent", "child"}) {
+				t.Fatalf("unexpected second route: %#v", got[1])
+			}
+			if original := child.Routes()[0]; original.Path != "/items" || original.Auth != auth || !reflect.DeepEqual(original.Tags, []string{"child"}) {
+				t.Fatalf("child changed: %#v", original)
+			}
+			parent.Include("/copy", parent)
+			if len(parent.Routes()) != 4 {
+				t.Fatal("self-include did not snapshot existing routes")
+			}
+		})
 	}
 }
 

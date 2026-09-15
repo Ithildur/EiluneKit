@@ -13,8 +13,16 @@ import (
 
 func TestMountApplicationAuthentication(t *testing.T) {
 	type principalKey struct{}
-	for _, prefix := range []string{"", "/api"} {
-		t.Run(prefix, func(t *testing.T) {
+	for _, test := range []struct {
+		prefix string
+		custom bool
+	}{{"", false}, {"/api", false}, {"", true}, {"/api", true}} {
+		name := test.prefix + "/default"
+		if test.custom {
+			name = test.prefix + "/custom"
+		}
+		t.Run(name, func(t *testing.T) {
+			prefix := test.prefix
 			authenticate := func(next http.Handler) http.Handler {
 				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					if cookie, err := r.Cookie("session"); err == nil && cookie.Value == "accepted" {
@@ -37,15 +45,22 @@ func TestMountApplicationAuthentication(t *testing.T) {
 				w.WriteHeader(http.StatusNoContent)
 			}, routes.Auth(routes.AuthPublic))
 			mux := chi.NewRouter()
-			err := routes.MountWithOptions(mux, prefix, api.Routes(), routes.MountOptions{
-				Unauthorized: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var unauthorized http.Handler
+			if test.custom {
+				unauthorized = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusUnauthorized)
 					_ = json.MarshalWrite(w, map[string]any{"error": map[string]string{
 						"code": "unauthorized", "request_id": r.Header.Get("X-Request-ID"),
 					}})
-				}),
-			})
+				})
+			}
+			var err error
+			if test.custom {
+				err = routes.MountWithOptions(mux, prefix, api.Routes(), routes.MountOptions{Unauthorized: unauthorized})
+			} else {
+				err = routes.Mount(mux, prefix, api.Routes())
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -63,6 +78,7 @@ func TestMountApplicationAuthentication(t *testing.T) {
 					continue
 				}
 				var body struct {
+					Code  string `json:"code"`
 					Error struct {
 						Code      string `json:"code"`
 						RequestID string `json:"request_id"`
@@ -71,7 +87,11 @@ func TestMountApplicationAuthentication(t *testing.T) {
 				if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
 					t.Fatal(err)
 				}
-				if called || recorder.Code != http.StatusUnauthorized || body.Error.Code != "unauthorized" || body.Error.RequestID != "request-1" {
+				validBody := body.Code == "unauthorized"
+				if test.custom {
+					validBody = body.Error.Code == "unauthorized" && body.Error.RequestID == "request-1"
+				}
+				if called || recorder.Code != http.StatusUnauthorized || !validBody {
 					t.Fatalf("rejected request: status=%d called=%t body=%s", recorder.Code, called, recorder.Body)
 				}
 			}
