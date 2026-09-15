@@ -1,21 +1,36 @@
 # http/static
 
-`http/static` 用于在 `chi` 上提供项目内静态目录和 SPA 资源。导入路径：`github.com/Ithildur/EiluneKit/http/static`；包名：`static`。
+`http/static` 提供项目内静态目录和 SPA handler。导入路径：`github.com/Ithildur/EiluneKit/http/static`；包名：`static`。
 
 ## 快速开始
 
 ```go
-handler, err := static.SPAHandler("dist", static.Options{
+spa, err := static.SPAHandler("dist", static.Options{
 	AppDir: appdir.Options{EnvVar: "APP_HOME"},
 })
 if err != nil {
 	return err
 }
 
-r.Handle("/*", handler)
+handler, err := routes.NewHandler(api.RoutesAt("/api"), routes.HandlerOptions{
+	NotFound: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/") {
+			response.WriteJSONError(w, http.StatusNotFound, "not_found", "resource not found")
+			return
+		}
+		spa.ServeHTTP(w, r)
+	}),
+})
+if err != nil {
+	return err
+}
 ```
 
-显式挂载：
+这里的 `api` 是应用的 Blueprint；将 `handler` 交给 `http.Server.Handler`。应用选择为 `/api` 和 `/api/…` 返回 JSON 404，其余路径交给 SPA。History 回退仅用于不存在的路径；其他文件系统错误使用文件服务器的错误响应。
+
+与 API 共用路由器时，使用兜底注入。全局 `/*` 会参与方法匹配，并与下级路由冲突，可能接走本应进入 API 404/405 handler 的请求。
+
+已有的 chi 集成仍可显式挂载，但该前缀应由静态 handler 独占：
 
 ```go
 if _, err := static.MountSPA(r, "/app", "dist", static.Options{

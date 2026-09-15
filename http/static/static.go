@@ -29,13 +29,11 @@ type Options struct {
 // SPAHandler returns a handler with SPA history fallback.
 // relPath must be project-relative, for example "dist" or "web/dist".
 // Call handler, err := SPAHandler(relPath, opts).
+// Inject through routes.HandlerOptions.NotFound for application fallback.
 // SPAHandler 返回带 SPA history 回退的 handler。
 // relPath 必须是项目相对路径，例如 "dist" 或 "web/dist"。
 // 调用 handler, err := SPAHandler(relPath, opts)。
-// Example / 示例:
-//
-//	handler, _ := static.SPAHandler("dist", static.Options{})
-//	r.Handle("/*", handler)
+// 通过 routes.HandlerOptions.NotFound 注入应用兜底。
 func SPAHandler(relPath string, opts Options) (http.Handler, error) {
 	dir, err := ResolveSPADir(relPath, opts)
 	if err != nil {
@@ -50,7 +48,7 @@ func SPAHandler(relPath string, opts Options) (http.Handler, error) {
 			requestPath = "."
 		}
 
-		if _, err := fs.Stat(fsys, requestPath); err == nil {
+		if _, err := fs.Stat(fsys, requestPath); !errors.Is(err, fs.ErrNotExist) {
 			fileServer.ServeHTTP(w, r)
 			return
 		}

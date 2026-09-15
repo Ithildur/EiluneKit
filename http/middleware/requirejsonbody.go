@@ -3,8 +3,8 @@
 package middleware
 
 import (
+	"mime"
 	"net/http"
-	"strings"
 
 	"github.com/Ithildur/EiluneKit/http/response"
 )
@@ -18,13 +18,10 @@ import (
 //	r.Post("/login", "Login", loginHandler, routes.Use(middleware.RequireJSONBody))
 func RequireJSONBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Body != nil && r.Body != http.NoBody {
-			if r.ContentLength != 0 || len(r.TransferEncoding) > 0 {
-				ct := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
-				if i := strings.Index(ct, ";"); i >= 0 {
-					ct = ct[:i]
-				}
-				if ct != "application/json" {
+		if r.Body != nil && r.Body != http.NoBody && (r.ContentLength != 0 || len(r.TransferEncoding) > 0) {
+			if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+				mediaType, _, err := mime.ParseMediaType(ct)
+				if err != nil || mediaType != "application/json" {
 					response.WriteJSONError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "content-type must be application/json")
 					return
 				}

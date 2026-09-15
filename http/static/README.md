@@ -1,21 +1,36 @@
 # http/static
 
-`http/static` serves project-relative static directories and SPA assets on top of `chi`. Import path: `github.com/Ithildur/EiluneKit/http/static`; package name: `static`.
+`http/static` provides project-relative static directories and SPA handlers. Import path: `github.com/Ithildur/EiluneKit/http/static`; package name: `static`.
 
 ## Quick Start
 
 ```go
-handler, err := static.SPAHandler("dist", static.Options{
+spa, err := static.SPAHandler("dist", static.Options{
 	AppDir: appdir.Options{EnvVar: "APP_HOME"},
 })
 if err != nil {
 	return err
 }
 
-r.Handle("/*", handler)
+handler, err := routes.NewHandler(api.RoutesAt("/api"), routes.HandlerOptions{
+	NotFound: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/") {
+			response.WriteJSONError(w, http.StatusNotFound, "not_found", "resource not found")
+			return
+		}
+		spa.ServeHTTP(w, r)
+	}),
+})
+if err != nil {
+	return err
+}
 ```
 
-For explicit mounting:
+Here `api` is the application's Blueprint. Pass `handler` to `http.Server.Handler`. The application selects `/api` and `/api/…` for JSON 404 responses and delegates other paths to the SPA. History fallback applies only to missing paths; other filesystem errors receive the file server's error response.
+
+Use fallback injection when sharing a router with API endpoints. A global `/*` participates in method matching and conflicts with descendant routes; it can consume requests that should reach API 404/405 handlers.
+
+For existing chi integration, explicit mounting remains available at a prefix owned exclusively by the static handler:
 
 ```go
 if _, err := static.MountSPA(r, "/app", "dist", static.Options{

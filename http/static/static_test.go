@@ -215,4 +215,15 @@ func TestSPAHandlerFallsBackToIndex(t *testing.T) {
 	if got := spaRec.Body.String(); got != "index" {
 		t.Fatalf("expected index fallback body %q, got %q", "index", got)
 	}
+
+	t.Run("filesystem error", func(t *testing.T) {
+		if err := os.Symlink("loop", filepath.Join(distDir, "loop")); err != nil {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/loop", nil))
+		if w.Code != http.StatusInternalServerError {
+			t.Fatalf("filesystem error returned %d: %s", w.Code, w.Body.String())
+		}
+	})
 }
