@@ -68,7 +68,7 @@ func (r Route) Clone() Route {
 	if r.Middleware != nil {
 		out.Middleware = append([]Middleware(nil), r.Middleware...)
 	}
-	out.Parameters = cloneParameters(r.Parameters)
+	out.Parameters = slices.Clone(r.Parameters)
 	if r.RequestBody != nil {
 		out.RequestBody = new(r.RequestBody.clone())
 	}
@@ -276,13 +276,13 @@ func WithPrefix(prefix string, routes []Route) []Route {
 			panic("routes: " + err.Error())
 		}
 		out[i].Path = path
-		out[i].Parameters = withPrefixParameters(prefix, out[i].Parameters)
+		out[i].Parameters = withPathParameters(prefix, out[i].Parameters)
 	}
 	return out
 }
 
-func withPrefixParameters(prefix string, params []Parameter) []Parameter {
-	names := pathParamNames(prefix)
+func withPathParameters(path string, params []Parameter) []Parameter {
+	names := pathParamNames(path)
 	if len(names) == 0 {
 		return params
 	}

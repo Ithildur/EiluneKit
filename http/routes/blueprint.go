@@ -183,10 +183,14 @@ func (b *Blueprint) withDefaults(route Route) Route {
 // Handle adds a route.
 // Dynamic path values are passed to extra string arguments in route path order.
 // Mount and include prefixes are part of that order. Up to 15 values are supported.
+// Handlers with extra string arguments infer required string metadata for named path parameters.
+// Explicit path parameter metadata takes precedence.
 // Panics if fn is nil or path uses invalid endpoint syntax.
 // Handle 添加路由。
 // 动态 path 值会按路由 path 顺序传给额外的 string 参数。
 // Mount 和 include 前缀也属于该顺序，最多支持 15 个值。
+// 带额外 string 参数的 handler 会为具名 path 参数推导必填 string 元数据。
+// 显式声明的 path 参数元数据优先。
 // fn 为 nil 或 path 不符合端点路径语法时 panic。
 func (b *Blueprint) Handle[H HandlerFunc](method, path, summary string, fn H, opts ...RouteOption) {
 	b = requireBlueprint(b)
@@ -200,6 +204,9 @@ func (b *Blueprint) Handle[H HandlerFunc](method, path, summary string, fn H, op
 		if opt != nil {
 			opt(&route)
 		}
+	}
+	if _, ok := route.Handler.(*paramHandler); ok {
+		route.Parameters = withPathParameters(route.Path, route.Parameters)
 	}
 	b.Add(route)
 }

@@ -101,12 +101,6 @@ updater.Get(
 	"Get remote",
 	remote,
 	routes.OperationID("getRemote"),
-	routes.Parameters(routes.Parameter{
-		Name:     "remoteID",
-		In:       routes.ParameterPath,
-		Required: true,
-		Schema:   routes.SchemaOf[string](""),
-	}),
 	routes.JSONResponse(http.StatusOK, "Remote", routes.SchemaOf[remoteResponse]("Remote")),
 	routes.Security(routes.SecurityRequirement{
 		{
@@ -134,6 +128,8 @@ func remote(w http.ResponseWriter, r *http.Request, remoteID string) {
 	_ = remoteID
 }
 ```
+
+For handlers with extra string arguments, Blueprint fills missing named path parameter metadata with required string schemas. Use `routes.Parameters` to supply explicit schemas or descriptions; explicit entries are preserved and still validated by OpenAPI generation. Standard two-argument handlers and routes added through `Route.Handler` require explicit endpoint path parameter metadata. Wildcard routes remain unsupported by OpenAPI generation.
 
 `Blueprint.Routes()` and `RoutesAt()` return owned `[]routes.Route` copies. Pass the same final route list to mounting and contract generation. Dynamic prefix parameters default to required string path parameters; explicit metadata takes precedence.
 
@@ -208,7 +204,7 @@ spec, err := openapi.Generate(routeList, openapi.Options{
 })
 ```
 
-Each generated operation requires an explicit, globally unique `OperationID` and at least one response. Path parameters, request bodies, response bodies, and security are declared with route options. Named `SchemaOf` values become stable components.
+Each generated operation requires an explicit, globally unique `OperationID` and at least one response. Blueprint infers default path parameter metadata for handlers with extra string arguments. Use route options for explicit parameter metadata, request bodies, response bodies, and security. Named `SchemaOf` values become stable components.
 
 For application types whose custom JSON encoding differs from reflection, use `JSONSchemaAlias() any` to describe the wire type. For a quantity encoded as a decimal JSON string:
 

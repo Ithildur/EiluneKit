@@ -189,22 +189,14 @@ func Security(requirements ...SecurityRequirement) RouteOption {
 }
 
 func (b RequestBody) clone() RequestBody {
-	b.Content = cloneContent(b.Content)
+	b.Content = maps.Clone(b.Content)
 	return b
 }
 
 func (r Response) clone() Response {
-	r.Content = cloneContent(r.Content)
+	r.Content = maps.Clone(r.Content)
 	r.Headers = maps.Clone(r.Headers)
 	return r
-}
-
-func cloneContent(content Content) Content {
-	return maps.Clone(content)
-}
-
-func cloneParameters(params []Parameter) []Parameter {
-	return slices.Clone(params)
 }
 
 func cloneResponses(responses map[string]Response) map[string]Response {

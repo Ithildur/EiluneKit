@@ -101,12 +101,6 @@ updater.Get(
 	"Get remote",
 	remote,
 	routes.OperationID("getRemote"),
-	routes.Parameters(routes.Parameter{
-		Name:     "remoteID",
-		In:       routes.ParameterPath,
-		Required: true,
-		Schema:   routes.SchemaOf[string](""),
-	}),
 	routes.JSONResponse(http.StatusOK, "Remote", routes.SchemaOf[remoteResponse]("Remote")),
 	routes.Security(routes.SecurityRequirement{
 		{
@@ -134,6 +128,8 @@ func remote(w http.ResponseWriter, r *http.Request, remoteID string) {
 	_ = remoteID
 }
 ```
+
+对于带额外 string 参数的 handler，Blueprint 会将缺失的具名 path 参数元数据补齐为必填 string。使用 `routes.Parameters` 显式提供 schema 或描述；显式条目保留原样，仍由 OpenAPI 生成执行校验。标准双参数 handler 和通过 `Route.Handler` 添加的路由需要显式声明端点 path 参数元数据。OpenAPI 生成仍不支持通配符路由。
 
 `Blueprint.Routes()` 和 `RoutesAt()` 返回拥有所有权的 `[]routes.Route` 副本。挂载和契约生成应使用同一组最终路由。动态前缀参数默认为必填的 string path 参数；显式元数据优先。
 
@@ -208,7 +204,7 @@ spec, err := openapi.Generate(routeList, openapi.Options{
 })
 ```
 
-每个生成的 operation 必须显式提供全局唯一的 `OperationID` 和至少一个响应。path 参数、请求体、响应体和 security 通过路由 option 声明。具名 `SchemaOf` 会生成稳定的 component。
+每个生成的 operation 必须显式提供全局唯一的 `OperationID` 和至少一个响应。Blueprint 会为带额外 string 参数的 handler 推导默认 path 参数元数据。显式参数元数据、请求体、响应体和 security 通过路由 option 声明。具名 `SchemaOf` 会生成稳定的 component。
 
 应用类型的自定义 JSON 编码与反射结果不同时，使用 `JSONSchemaAlias() any` 描述 wire 类型。例如，编码为十进制 JSON string 的数量类型：
 
