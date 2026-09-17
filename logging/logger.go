@@ -129,7 +129,7 @@ func New(opts Options) *slog.Logger {
 			Level:     opts.Level.SlogLevel(),
 			AddSource: opts.AddSource,
 			ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
-				if a.Key == slog.TimeKey {
+				if len(groups) == 0 && a.Key == slog.TimeKey && a.Value.Kind() == slog.KindTime {
 					t := a.Value.Time()
 					if !t.IsZero() {
 						a.Value = slog.StringValue(t.Local().Format(opts.TimeFormat))
@@ -139,7 +139,7 @@ func New(opts Options) *slog.Logger {
 			},
 		})
 	default:
-		handler = newTextHandler(writer, opts.Level, opts.TimeFormat)
+		handler = newTextHandler(writer, opts.Level, opts.TimeFormat, opts.AddSource)
 	}
 
 	return slog.New(handler)

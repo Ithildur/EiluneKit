@@ -3,10 +3,17 @@ package logging
 import (
 	"context"
 	"log/slog"
+	"runtime"
+	"slices"
+	"time"
+
+	"github.com/Ithildur/EiluneKit/contextutil"
 )
 
-// Helper wraps *slog.Logger with Error(msg, err, attrs...) style calls.
-// Helper 用 Error(msg, err, attrs...) 形式包装 *slog.Logger。
+// Helper wraps *slog.Logger with Error(ctx, msg, err, attrs...) style calls.
+// Logging methods and Enabled require a non-nil context.
+// Helper 用 Error(ctx, msg, err, attrs...) 形式包装 *slog.Logger。
+// 日志方法和 Enabled 要求非 nil context。
 type Helper struct {
 	logger *slog.Logger
 }
@@ -37,26 +44,26 @@ func (h *Helper) Logger() *slog.Logger {
 
 // Debug logs msg, err, and attrs at debug level.
 // Debug 以 debug 级别记录 msg、err 和 attrs。
-func (h *Helper) Debug(msg string, err error, attrs ...slog.Attr) {
-	h.log(slog.LevelDebug, msg, err, attrs...)
+func (h *Helper) Debug(ctx context.Context, msg string, err error, attrs ...slog.Attr) {
+	h.log(ctx, slog.LevelDebug, msg, err, attrs...)
 }
 
 // Info logs msg, err, and attrs at info level.
 // Info 以 info 级别记录 msg、err 和 attrs。
-func (h *Helper) Info(msg string, err error, attrs ...slog.Attr) {
-	h.log(slog.LevelInfo, msg, err, attrs...)
+func (h *Helper) Info(ctx context.Context, msg string, err error, attrs ...slog.Attr) {
+	h.log(ctx, slog.LevelInfo, msg, err, attrs...)
 }
 
 // Warn logs msg, err, and attrs at warn level.
 // Warn 以 warn 级别记录 msg、err 和 attrs。
-func (h *Helper) Warn(msg string, err error, attrs ...slog.Attr) {
-	h.log(slog.LevelWarn, msg, err, attrs...)
+func (h *Helper) Warn(ctx context.Context, msg string, err error, attrs ...slog.Attr) {
+	h.log(ctx, slog.LevelWarn, msg, err, attrs...)
 }
 
 // Error logs msg, err, and attrs at error level.
 // Error 以 error 级别记录 msg、err 和 attrs。
-func (h *Helper) Error(msg string, err error, attrs ...slog.Attr) {
-	h.log(slog.LevelError, msg, err, attrs...)
+func (h *Helper) Error(ctx context.Context, msg string, err error, attrs ...slog.Attr) {
+	h.log(ctx, slog.LevelError, msg, err, attrs...)
 }
 
 // With returns a child helper with bound attrs.
@@ -67,24 +74,31 @@ func (h *Helper) With(attrs ...slog.Attr) *Helper {
 	if len(attrs) == 0 {
 		return h
 	}
-	args := make([]any, 0, len(attrs))
-	for _, attr := range attrs {
-		args = append(args, attr)
-	}
-	return &Helper{logger: h.logger.With(args...)}
+	return &Helper{logger: slog.New(h.logger.Handler().WithAttrs(slices.Clone(attrs)))}
 }
 
 // Enabled reports whether a level is enabled.
 // Call Enabled before building expensive attrs.
 // Enabled 返回某个级别是否启用。
 // 在构造代价高的 attrs 前调用 Enabled。
-func (h *Helper) Enabled(level Level) bool {
-	return h.logger.Enabled(context.Background(), level.SlogLevel())
+func (h *Helper) Enabled(ctx context.Context, level Level) bool {
+	return h.logger.Enabled(contextutil.Require(ctx), level.SlogLevel())
 }
 
-func (h *Helper) log(level slog.Level, msg string, err error, attrs ...slog.Attr) {
-	if err != nil {
-		attrs = append(attrs, slog.Any("error", err))
+func (h *Helper) log(ctx context.Context, level slog.Level, msg string, err error, attrs ...slog.Attr) {
+	ctx = contextutil.Require(ctx)
+	handler := h.logger.Handler()
+	if !handler.Enabled(ctx, level) {
+		return
 	}
-	h.logger.LogAttrs(context.Background(), level, msg, attrs...)
+	var pcs [1]uintptr
+	// Skip Callers, log, and the public logging method to record the application caller.
+	// 跳过 Callers、log 和公开日志方法，记录应用调用位置。
+	runtime.Callers(3, pcs[:])
+	record := slog.NewRecord(time.Now(), level, msg, pcs[0])
+	record.AddAttrs(attrs...)
+	if err != nil {
+		record.AddAttrs(slog.Any("error", err))
+	}
+	_ = handler.Handle(ctx, record)
 }

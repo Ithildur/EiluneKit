@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,16 +15,23 @@ import (
 type textHandler struct {
 	level       slog.Level
 	timeFormat  string
+	addSource   bool
 	writer      io.Writer
 	mu          *sync.Mutex
-	attrs       []slog.Attr
+	attrs       []textAttr
 	groupPrefix string
 }
 
-func newTextHandler(w io.Writer, level Level, timeFormat string) slog.Handler {
+type textAttr struct {
+	prefix string
+	attr   slog.Attr
+}
+
+func newTextHandler(w io.Writer, level Level, timeFormat string, addSource bool) slog.Handler {
 	return &textHandler{
 		level:      level.SlogLevel(),
 		timeFormat: timeFormat,
+		addSource:  addSource,
 		writer:     w,
 		mu:         &sync.Mutex{},
 	}
@@ -45,8 +53,14 @@ func (h *textHandler) Handle(_ context.Context, r slog.Record) error {
 	line.WriteString("] ")
 	line.WriteString(r.Message)
 
+	if h.addSource {
+		if source := r.Source(); source != nil {
+			h.appendAttr(&line, "", slog.String(slog.SourceKey, source.File+":"+strconv.Itoa(source.Line)))
+		}
+	}
+
 	for _, a := range h.attrs {
-		h.appendAttr(&line, h.groupPrefix, a)
+		h.appendAttr(&line, a.prefix, a.attr)
 	}
 	r.Attrs(func(a slog.Attr) bool {
 		h.appendAttr(&line, h.groupPrefix, a)
@@ -62,7 +76,10 @@ func (h *textHandler) Handle(_ context.Context, r slog.Record) error {
 
 func (h *textHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	next := *h
-	next.attrs = append(append([]slog.Attr{}, h.attrs...), attrs...)
+	next.attrs = slices.Clone(h.attrs)
+	for _, a := range attrs {
+		next.attrs = append(next.attrs, textAttr{prefix: h.groupPrefix, attr: a})
+	}
 	return &next
 }
 
