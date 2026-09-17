@@ -13,6 +13,26 @@ if err != nil {
 }
 ```
 
+`NewClient` enables `ContextTimeoutEnabled`: network I/O observes the earlier of the context deadline and the configured socket timeout. The caller owns the client and closes it with `Close`.
+
+## Session storage
+
+`auth/store/redissession.Options.ReadTimeout` and `WriteTimeout` bound whole store operations, including calls that execute multiple Redis commands. Client socket timeouts apply to individual network reads and writes.
+
+Clients created directly with `github.com/redis/go-redis/v9` (aliased as `goredis` below) must enable context deadlines before being passed to the session store:
+
+```go
+client := goredis.NewClient(&goredis.Options{
+	Addr:                  "localhost:6379",
+	ContextTimeoutEnabled: true,
+})
+defer client.Close()
+
+store := redissession.New(client, redissession.Options{})
+```
+
+`ClearAllSessions` deletes session records and leaves stale index entries for `Sessions` to prune or the index TTL to expire. Concurrent logins may survive the scan and remain listed; cleanup does not provide an atomic cutoff. Until pruned, stale entries consume index space and add work to session listing.
+
 ## Automatic pipelining
 
 `NewClient` returns the underlying `*redis.Client`. For workloads with many concurrent, small, independent commands, opt in to go-redis automatic pipelining through that client:

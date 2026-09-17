@@ -29,8 +29,10 @@ type Config struct {
 }
 
 // NewClient returns a Redis client.
+// Network I/O observes context deadlines as well as the configured socket timeouts.
 // Call NewClient(Config{Addr: "host:port"}).
 // NewClient 返回 Redis client。
+// 网络 I/O 同时遵守 context deadline 和配置的 socket 超时。
 // 调用 NewClient(Config{Addr: "host:port"})。
 //
 // Example / 示例:
@@ -43,13 +45,14 @@ func NewClient(cfg Config) (*redis.Client, error) {
 	}
 
 	opts := &redis.Options{
-		Addr:         addr,
-		Username:     cfg.Username,
-		Password:     cfg.Password,
-		DB:           cfg.DB,
-		PoolSize:     cfg.PoolSize,
-		MinIdleConns: cfg.MinIdleConns,
-		TLSConfig:    cfg.TLSConfig,
+		ContextTimeoutEnabled: true,
+		Addr:                  addr,
+		Username:              cfg.Username,
+		Password:              cfg.Password,
+		DB:                    cfg.DB,
+		PoolSize:              cfg.PoolSize,
+		MinIdleConns:          cfg.MinIdleConns,
+		TLSConfig:             cfg.TLSConfig,
 	}
 	if cfg.DialTimeout > 0 {
 		opts.DialTimeout = cfg.DialTimeout

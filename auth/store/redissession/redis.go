@@ -47,7 +47,9 @@ var (
 )
 
 // Options configures New.
+// ReadTimeout and WriteTimeout bound whole store operations, including all Redis commands.
 // Options 配置 New。
+// ReadTimeout 和 WriteTimeout 限制整次 store 操作，包括其中的全部 Redis 命令。
 type Options struct {
 	Prefix       string
 	WriteTimeout time.Duration
@@ -72,7 +74,9 @@ var rotateRefreshScript = redis.NewScript(rotateRefreshLua)
 var trimSessionIndexScript = redis.NewScript(trimSessionIndexLua)
 
 // New returns a Redis-backed session store.
+// The caller owns client and must enable its ContextTimeoutEnabled option for store deadlines.
 // New 返回 Redis 版 session store。
+// client 由调用方管理，必须启用其 ContextTimeoutEnabled 选项才能执行 store 的 deadline。
 func New(client *redis.Client, opts Options) *Store {
 	prefix := opts.Prefix
 	if prefix == "" {
@@ -377,7 +381,9 @@ func (s *Store) Sessions(ctx context.Context, userID string) ([]authstore.Sessio
 }
 
 // ClearUserSessions removes stored sessions for userID.
+// Sessions added after the cleanup snapshot retain their records and index entries.
 // ClearUserSessions 清理 userID 已保存的 session。
+// 清理快照之后新增的 session 会保留其记录和索引成员。
 func (s *Store) ClearUserSessions(ctx context.Context, userID string) error {
 	ctx = contextutil.Require(ctx)
 	if s == nil || s.client == nil {
@@ -396,7 +402,11 @@ func (s *Store) ClearUserSessions(ctx context.Context, userID string) error {
 }
 
 // ClearAllSessions removes all stored sessions.
+// Concurrently created sessions may survive the scan and retain their index entries.
+// Stale index entries are removed by Sessions or expire with the index TTL.
 // ClearAllSessions 清理全部已保存的 session。
+// 并发创建的 session 可能保留，并保有对应索引成员。
+// 陈旧索引成员由 Sessions 清理，或随索引 TTL 到期回收。
 func (s *Store) ClearAllSessions(ctx context.Context) error {
 	ctx = contextutil.Require(ctx)
 	if s == nil || s.client == nil {
@@ -404,10 +414,8 @@ func (s *Store) ClearAllSessions(ctx context.Context) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.writeTimeout)
 	defer cancel()
-	if err := s.deleteKeysByPattern(ctx, s.sessionKey("*")); err != nil {
-		return authstore.ErrStoreUnavailable
-	}
-	if err := s.deleteKeysByPattern(ctx, s.userSessionsKey("*")); err != nil {
+	prefix := strings.NewReplacer(`\`, `\\`, `*`, `\*`, `?`, `\?`, `[`, `\[`, `]`, `\]`).Replace(s.prefix)
+	if err := s.deleteKeysByPattern(ctx, prefix+"sessions:*"); err != nil {
 		return authstore.ErrStoreUnavailable
 	}
 	return nil
@@ -419,15 +427,22 @@ func (s *Store) clearUserSessionsWithContext(ctx context.Context, userID string)
 	if err != nil {
 		return err
 	}
-	pipe := s.client.TxPipeline()
-	if len(sessionIDs) > 0 {
-		keys := make([]string, 0, len(sessionIDs))
-		for _, sessionID := range sessionIDs {
-			keys = append(keys, s.sessionKey(sessionID))
-		}
-		pipe.Del(ctx, keys...)
+	if len(sessionIDs) == 0 {
+		return nil
 	}
-	pipe.Del(ctx, key)
+	now := time.Now().UTC()
+	keys := make([]string, 0, len(sessionIDs))
+	args := make([]any, 0, 3+len(sessionIDs))
+	args = append(args, sessionIndexTTLGrace.Milliseconds(), now.Unix(), now.UnixMilli())
+	for _, sessionID := range sessionIDs {
+		keys = append(keys, s.sessionKey(sessionID))
+		args = append(args, sessionID)
+	}
+	pipe := s.client.TxPipeline()
+	pipe.Del(ctx, keys...)
+	// EVAL avoids a NOSCRIPT retry after the transaction has already deleted the records.
+	// EVAL 避免事务已删除记录后再因 NOSCRIPT 重试脚本。
+	pipe.Eval(ctx, trimSessionIndexLua, []string{key}, args...)
 	_, err = pipe.Exec(ctx)
 	return err
 }
