@@ -51,6 +51,7 @@ if err := migration.RequireCurrent(ctx, cfg); err != nil {
 ## 说明
 
 - `gorm` 和 `pgx` 需要显式提供非空 `context.Context`
+- `pgx.NewPool` 创建按需建连的连接池；启动时需要验证连通性时调用 `pgx.Ping`。`Config.ConnectTimeout` 限制每次连接尝试，非正值默认使用五秒。
 - `gorm.Connect` 使用调用方 context 验证连接，无 deadline 时使用五秒超时，验证失败会关闭 SQL 连接池。成功后连接池归调用方所有，由调用方关闭。
 - `gorm.NewLogger` 默认隐藏 SQL 查询参数值；只在受控调试时设置 `LogOptions.IncludeQueryParams`
 - `migration` 需要显式提供非空 `context.Context`；应用命令仍负责配置、连接装配、输出和退出状态

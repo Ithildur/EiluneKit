@@ -27,7 +27,9 @@ type Config struct {
 	MaxConns        int
 	MinConns        int
 	MaxConnLifetime time.Duration
-	ConnectTimeout  time.Duration
+	// ConnectTimeout limits each connection attempt. Non-positive values use five seconds.
+	// ConnectTimeout 限制每次连接尝试；非正值使用五秒。
+	ConnectTimeout time.Duration
 }
 
 // BuildDSN returns the Postgres DSN for cfg.
@@ -73,18 +75,12 @@ func NewPool(ctx context.Context, cfg Config) (*pgxpool.Pool, error) {
 		poolCfg.MaxConnLifetime = cfg.MaxConnLifetime
 	}
 
-	connectCtx := ctx
-	if _, ok := ctx.Deadline(); !ok {
-		timeout := cfg.ConnectTimeout
-		if timeout <= 0 {
-			timeout = defaultConnectTimeout
-		}
-		var cancel context.CancelFunc
-		connectCtx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
+	poolCfg.ConnConfig.ConnectTimeout = cfg.ConnectTimeout
+	if poolCfg.ConnConfig.ConnectTimeout <= 0 {
+		poolCfg.ConnConfig.ConnectTimeout = defaultConnectTimeout
 	}
 
-	pool, err := pgxpool.NewWithConfig(connectCtx, poolCfg)
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return nil, fmt.Errorf("connect postgres: %w", err)
 	}
