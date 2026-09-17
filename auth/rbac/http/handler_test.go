@@ -29,6 +29,16 @@ type captureLockout struct {
 	keys []string
 }
 
+type countedLockout struct {
+	corerbac.Lockout
+	checks int
+}
+
+func (l *countedLockout) Check(ctx context.Context, key string) (time.Time, bool, error) {
+	l.checks++
+	return l.Lockout.Check(ctx, key)
+}
+
 func (l *captureLockout) Check(ctx context.Context, key string) (time.Time, bool, error) {
 	return time.Time{}, false, nil
 }
@@ -102,6 +112,63 @@ func newTestHandler(t *testing.T, options ...rbachttp.Options) (*rbachttp.Handle
 		t.Fatalf("register handler: %v", err)
 	}
 	return handler, router
+}
+
+func TestEmptyPasswordPreservesLockoutAndShortCircuit(t *testing.T) {
+	now := time.Now()
+	until := now.Add(time.Hour)
+	lockout := &countedLockout{Lockout: corerbac.NewMemoryLockout(corerbac.MemoryLockoutOptions{
+		MaxFailures: 2, Window: time.Minute, Lockout: time.Hour,
+		Now: func() time.Time { return now },
+	})}
+	manager, err := authjwt.New("0123456789abcdef0123456789abcdef", authstore.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifications := 0
+	service, err := corerbac.NewService(corerbac.ServiceOptions{
+		Users: newTestUserStore(corerbac.User{ID: "user-1", Username: "alice"}),
+		Passwords: corerbac.PasswordVerifierFunc(func(context.Context, corerbac.User, string) (bool, error) {
+			verifications++
+			return false, nil
+		}),
+		Tokens: manager, Lockout: lockout,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := rbachttp.NewHandler(service, rbachttp.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := chi.NewRouter()
+	if err := handler.Register(router); err != nil {
+		t.Fatal(err)
+	}
+	wrong := `{"username":"alice","password":"wrong"}`
+	if w := serve(router, http.MethodPost, "/auth/login", wrong, nil); w.Code != http.StatusUnauthorized {
+		t.Fatalf("first failure: %d %s", w.Code, w.Body.String())
+	}
+	if w := serve(router, http.MethodPost, "/auth/login", wrong, nil); w.Code != http.StatusTooManyRequests {
+		t.Fatalf("lock: %d %s", w.Code, w.Body.String())
+	}
+	now = now.Add(2 * time.Minute)
+	checks := lockout.checks
+	for range 2 {
+		if w := serve(router, http.MethodPost, "/auth/login", `{"username":"alice","password":""}`, nil); w.Code != http.StatusTooManyRequests {
+			t.Fatalf("empty password unlocked the caller: %d %s", w.Code, w.Body.String())
+		}
+	}
+	if lockout.checks != checks || verifications != 2 {
+		t.Fatal("empty password did not short-circuit")
+	}
+	if w := serve(router, http.MethodPost, "/auth/login", wrong, nil); w.Code != http.StatusTooManyRequests || verifications != 2 {
+		t.Fatalf("locked request reached verification: %d checks=%d", w.Code, verifications)
+	}
+	now = until
+	if w := serve(router, http.MethodPost, "/auth/login", `{"username":"alice","password":""}`, nil); w.Code != http.StatusUnauthorized || verifications != 2 {
+		t.Fatalf("expired lock did not restart counting: %d checks=%d", w.Code, verifications)
+	}
 }
 
 func TestHandlerBasePath(t *testing.T) {

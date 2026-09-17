@@ -49,8 +49,10 @@ func (e LockedError) Is(target error) bool {
 
 // Lockout tracks failed login attempts for a caller-provided non-empty key.
 // Empty keys should return ErrLockoutKeyRequired.
+// RecordFailure must report an active lock without resetting or extending it.
 // Lockout 跟踪调用方提供的非空 key 的失败登录尝试。
 // 空 key 应返回 ErrLockoutKeyRequired。
+// RecordFailure 必须返回已有且未到期的锁定，不得重置或延长它。
 type Lockout interface {
 	Check(ctx context.Context, key string) (until time.Time, locked bool, err error)
 	RecordFailure(ctx context.Context, key string) (until time.Time, locked bool, err error)
@@ -147,8 +149,10 @@ func (l *MemoryLockout) Check(ctx context.Context, key string) (time.Time, bool,
 }
 
 // RecordFailure records a failed attempt and reports whether it locked key.
+// An active lock keeps its original expiration regardless of the failure window.
 // Empty key returns ErrLockoutKeyRequired.
 // RecordFailure 记录一次失败尝试并返回 key 是否被锁定。
+// 已生效的锁定保持原过期时间，不受失败统计窗口影响。
 // 空 key 返回 ErrLockoutKeyRequired。
 func (l *MemoryLockout) RecordFailure(ctx context.Context, key string) (time.Time, bool, error) {
 	contextutil.Require(ctx)
@@ -162,8 +166,11 @@ func (l *MemoryLockout) RecordFailure(ctx context.Context, key string) (time.Tim
 	now := l.now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.ensureCapacity(now, key)
 	item := l.items[key]
+	if item.locked.After(now) {
+		return item.locked, true, nil
+	}
+	l.ensureCapacity(now, key)
 	if item.first.IsZero() || now.Sub(item.first) > l.opts.Window || (!item.locked.IsZero() && !item.locked.After(now)) {
 		item = lockoutItem{first: now}
 	}
