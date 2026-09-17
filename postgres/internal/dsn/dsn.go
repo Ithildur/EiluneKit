@@ -4,7 +4,10 @@ package dsn
 
 import (
 	"fmt"
+	"net"
 	"net/url"
+	"strconv"
+	"strings"
 )
 
 // Config configures Build.
@@ -25,9 +28,13 @@ func Build(cfg Config) (string, error) {
 		return "", fmt.Errorf("incomplete database config")
 	}
 
+	host := cfg.Host
+	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
+		host = host[1 : len(host)-1]
+	}
 	u := url.URL{
 		Scheme: "postgres",
-		Host:   fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
+		Host:   net.JoinHostPort(host, strconv.Itoa(cfg.Port)),
 		Path:   "/" + cfg.Database,
 	}
 	if cfg.Password != "" {
