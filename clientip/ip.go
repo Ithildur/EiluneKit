@@ -123,9 +123,9 @@ func parseForwardedForList(raw string) []netip.Addr {
 			}
 			val := strings.TrimSpace(param[4:])
 			val = strings.Trim(val, "\"")
+			val = stripPort(val)
 			val = strings.TrimPrefix(val, "[")
 			val = strings.TrimSuffix(val, "]")
-			val = stripPort(val)
 			if ip, err := netip.ParseAddr(val); err == nil {
 				out = append(out, ip)
 				break
