@@ -271,7 +271,7 @@ func TestManagerClearSessions(t *testing.T) {
 }
 
 func TestManagerClearUserSessionsRequiresCleaner(t *testing.T) {
-	store := sessionStoreOnly{store: authstore.NewMemoryStore()}
+	store := sessionStoreOnly{SessionStore: authstore.NewMemoryStore()}
 	mgr, err := authjwt.New("0123456789abcdef0123456789abcdef", store)
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
@@ -346,29 +346,5 @@ func TestManagerRejectsMissingIDs(t *testing.T) {
 }
 
 type sessionStoreOnly struct {
-	store *authstore.MemoryStore
-}
-
-func (s sessionStoreOnly) UserVersion(ctx context.Context, userID string) (int64, error) {
-	return s.store.UserVersion(ctx, userID)
-}
-
-func (s sessionStoreOnly) BumpUserVersion(ctx context.Context, userID string) (int64, error) {
-	return s.store.BumpUserVersion(ctx, userID)
-}
-
-func (s sessionStoreOnly) CreateSession(ctx context.Context, sessionID string, state authstore.SessionState) error {
-	return s.store.CreateSession(ctx, sessionID, state)
-}
-
-func (s sessionStoreOnly) Session(ctx context.Context, sessionID string) (authstore.SessionState, bool, error) {
-	return s.store.Session(ctx, sessionID)
-}
-
-func (s sessionStoreOnly) RotateRefresh(ctx context.Context, sessionID, userID string, expectedVersion int64, oldRefreshID, newRefreshID string, exp time.Time) (bool, error) {
-	return s.store.RotateRefresh(ctx, sessionID, userID, expectedVersion, oldRefreshID, newRefreshID, exp)
-}
-
-func (s sessionStoreOnly) RevokeSession(ctx context.Context, sessionID string) error {
-	return s.store.RevokeSession(ctx, sessionID)
+	authstore.SessionStore
 }

@@ -27,7 +27,6 @@ import (
 // Handler serves auth endpoints.
 // Handler 提供认证端点。
 type Handler struct {
-	auth    TokenManager
 	service *auth.Service
 	options Options
 	bearer  routes.Middleware
@@ -59,7 +58,6 @@ func NewHandler(manager TokenManager, opts Options) (*Handler, error) {
 	}
 
 	return &Handler{
-		auth:    manager,
 		service: service,
 		options: effective,
 		bearer:  bearer,
