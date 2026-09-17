@@ -15,7 +15,7 @@ import (
 // MemoryStore 在内存中保存 session。
 type MemoryStore struct {
 	mu            sync.RWMutex
-	sessions      map[string]memorySession
+	sessions      map[string]SessionState
 	userVersions  map[string]int64
 	lastPrune     time.Time
 	pruneInterval time.Duration
@@ -28,18 +28,11 @@ var (
 	_ SessionCleaner     = (*MemoryStore)(nil)
 )
 
-type memorySession struct {
-	userID      string
-	refreshID   string
-	exp         time.Time
-	sessionOnly bool
-}
-
 // NewMemoryStore returns an in-memory SessionStore.
 // NewMemoryStore 返回内存版 SessionStore。
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		sessions:      make(map[string]memorySession),
+		sessions:      make(map[string]SessionState),
 		userVersions:  make(map[string]int64),
 		pruneInterval: time.Minute,
 	}
@@ -99,12 +92,7 @@ func (s *MemoryStore) CreateSession(ctx context.Context, sessionID string, state
 	}
 	s.pruneExpired(now, false)
 	s.mu.Lock()
-	s.sessions[sessionID] = memorySession{
-		userID:      state.UserID,
-		refreshID:   state.RefreshID,
-		exp:         state.ExpiresAt,
-		sessionOnly: state.SessionOnly,
-	}
+	s.sessions[sessionID] = state
 	s.mu.Unlock()
 	return nil
 }
@@ -128,18 +116,15 @@ func (s *MemoryStore) Session(ctx context.Context, sessionID string) (SessionSta
 	if !ok {
 		return SessionState{}, false, nil
 	}
-	if !item.exp.After(now) {
+	if !item.ExpiresAt.After(now) {
 		s.mu.Lock()
-		delete(s.sessions, sessionID)
+		if current, ok := s.sessions[sessionID]; ok && !current.ExpiresAt.After(now) {
+			delete(s.sessions, sessionID)
+		}
 		s.mu.Unlock()
 		return SessionState{}, false, nil
 	}
-	return SessionState{
-		UserID:      item.userID,
-		RefreshID:   item.refreshID,
-		ExpiresAt:   item.exp,
-		SessionOnly: item.sessionOnly,
-	}, true, nil
+	return item, true, nil
 }
 
 // RotateRefresh replaces the refresh state for a session.
@@ -172,16 +157,16 @@ func (s *MemoryStore) RotateRefresh(ctx context.Context, sessionID, userID strin
 	if !ok {
 		return false, nil
 	}
-	if !item.exp.After(now) {
+	if !item.ExpiresAt.After(now) {
 		delete(s.sessions, sessionID)
 		return false, nil
 	}
-	if item.userID != userID || item.refreshID != oldRefreshID {
+	if item.UserID != userID || item.RefreshID != oldRefreshID {
 		return false, nil
 	}
 
-	item.refreshID = newRefreshID
-	item.exp = exp
+	item.RefreshID = newRefreshID
+	item.ExpiresAt = exp
 	s.sessions[sessionID] = item
 	return true, nil
 }
@@ -220,13 +205,13 @@ func (s *MemoryStore) Sessions(ctx context.Context, userID string) ([]SessionInf
 	s.mu.RLock()
 	out := make([]SessionInfo, 0)
 	for sessionID, item := range s.sessions {
-		if item.userID != userID || !item.exp.After(now) {
+		if item.UserID != userID || !item.ExpiresAt.After(now) {
 			continue
 		}
 		out = append(out, SessionInfo{
 			ID:          sessionID,
-			ExpiresAt:   item.exp,
-			SessionOnly: item.sessionOnly,
+			ExpiresAt:   item.ExpiresAt,
+			SessionOnly: item.SessionOnly,
 		})
 	}
 	s.mu.RUnlock()
@@ -253,7 +238,7 @@ func (s *MemoryStore) ClearUserSessions(ctx context.Context, userID string) erro
 	}
 	s.mu.Lock()
 	for sessionID, item := range s.sessions {
-		if item.userID == userID {
+		if item.UserID == userID {
 			delete(s.sessions, sessionID)
 		}
 	}
@@ -269,7 +254,7 @@ func (s *MemoryStore) ClearAllSessions(ctx context.Context) error {
 		return ErrStoreUnavailable
 	}
 	s.mu.Lock()
-	s.sessions = make(map[string]memorySession)
+	s.sessions = make(map[string]SessionState)
 	s.lastPrune = time.Time{}
 	s.mu.Unlock()
 	return nil
@@ -291,7 +276,7 @@ func (s *MemoryStore) pruneExpired(now time.Time, force bool) {
 		return
 	}
 	for k, v := range s.sessions {
-		if !v.exp.After(now) {
+		if !v.ExpiresAt.After(now) {
 			delete(s.sessions, k)
 		}
 	}
