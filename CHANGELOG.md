@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.4.3 - 2026-09-18
+
+### Breaking
+
+- `logging.Helper.Debug`, `Info`, `Warn`, `Error`, and `Enabled` now require a non-nil context as their first argument. Pass the request context, or `context.Background()` for startup logs. No parallel context-free methods are retained.
+- `dbtypes.PQArray` is now a function instead of an assignable variable. Existing calls keep the same signature and pq array conversion behavior; remove assignments to `dbtypes.PQArray` or move custom conversion into application code.
+- `redis.NewClient` enables context deadlines for network I/O. Operations can now time out before the configured socket timeout; supply a context deadline that covers the intended operation. Externally created clients passed to `auth/store/redissession` must enable `ContextTimeoutEnabled` for store deadlines to take effect.
+- `pgx.NewPool` applies `Config.ConnectTimeout` to each connection attempt, with a five-second default for non-positive values. Set a longer timeout explicitly when needed.
+- Active login lockouts retain their original expiration across failure-window resets and repeated failures. Custom `Lockout.RecordFailure` implementations must preserve and report active locks. RBAC login with empty credentials returns `429` while locked and retains its credential short-circuit.
+
+### Added
+
+- Blueprint handlers with injected path arguments infer missing named path parameter metadata as required strings for OpenAPI generation. Explicit metadata takes precedence; standard HTTP handlers still require explicit endpoint path parameter metadata.
+
+### Fixed
+
+- `logging.Helper` passes the caller's context to log filtering and output, reports the application call site, and does not append errors into the caller's attribute slice.
+- `logging.Options.AddSource` now includes `source=file:line` in text output as well as source metadata in JSON output. Output is unchanged when the option is disabled.
+- JSON logging only applies the configured timestamp format to root-level time-valued `time` attributes; other attributes named `time` no longer cause a panic or receive unintended formatting.
+- Text logging preserves the group associated with each bound attribute when later calls to `WithGroup` add nested groups.
+- `auth/store.MemoryStore` rechecks expired sessions under the write lock before deleting them, preserving concurrently replaced active sessions.
+- Redis user-session cleanup preserves sessions created after its snapshot, their index entries, and the remaining index TTL.
+- Redis global session cleanup preserves index entries for surviving concurrent sessions. Stale index entries remain until session listing prunes them or the index TTL expires; cleanup does not provide an atomic cutoff for concurrent logins.
+- Redis session cleanup treats namespace prefixes literally, including Redis glob metacharacters, without changing stored keys.
+- Postgres DSN construction accepts IPv6 hosts with or without brackets, including scoped addresses.
+- Client IP extraction accepts bracketed IPv6 addresses with ports in trusted `Forwarded` headers.
+
 ## v0.4.2 - 2026-09-15
 
 ### Breaking
