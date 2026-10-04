@@ -31,7 +31,7 @@ defer client.Close()
 store := redissession.New(client, redissession.Options{})
 ```
 
-`ClearAllSessions` deletes session records and leaves stale index entries for `Sessions` to prune or the index TTL to expire. Concurrent logins may survive the scan and remain listed; cleanup does not provide an atomic cutoff. Until pruned, stale entries consume index space and add work to session listing.
+`ClearAllSessions` deletes session records and leaves stale index entries for `Sessions` to prune or the index TTL to expire. Creation also removes stale entries before rejecting a user at capacity. Concurrent logins may survive the scan and remain listed; cleanup does not provide an atomic cutoff. Until pruned, stale entries consume index space and add work to session listing.
 
 ## Automatic pipelining
 

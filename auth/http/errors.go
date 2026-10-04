@@ -6,6 +6,7 @@ import (
 
 	authcore "github.com/Ithildur/EiluneKit/auth"
 	authjwt "github.com/Ithildur/EiluneKit/auth/jwt"
+	authstore "github.com/Ithildur/EiluneKit/auth/store"
 	"github.com/Ithildur/EiluneKit/http/response"
 )
 
@@ -18,7 +19,7 @@ func writeAuthFailure(w stdhttp.ResponseWriter, err error) {
 	switch {
 	case err == nil:
 		response.WriteJSONError(w, stdhttp.StatusInternalServerError, errAuthErrorCode, errAuthErrorMessage)
-	case errors.Is(err, authcore.ErrLoginLocked), errors.Is(err, authcore.ErrLockoutCapacity):
+	case errors.Is(err, authcore.ErrLoginLocked), errors.Is(err, authcore.ErrLockoutCapacity), errors.Is(err, authstore.ErrSessionLimitReached):
 		response.WriteJSONError(w, stdhttp.StatusUnauthorized, "unauthorized", "invalid credentials")
 	case errors.Is(err, authjwt.ErrStoreUnavailable):
 		response.WriteJSONError(w, stdhttp.StatusServiceUnavailable, "auth_unavailable", "auth is unavailable")

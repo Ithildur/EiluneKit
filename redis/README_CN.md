@@ -31,7 +31,7 @@ defer client.Close()
 store := redissession.New(client, redissession.Options{})
 ```
 
-`ClearAllSessions` 删除会话记录，陈旧索引成员由 `Sessions` 修剪或随索引 TTL 到期回收。并发登录可能保留，并仍可列出；清理不提供统一时间点的原子撤销。修剪前，陈旧成员会占用索引空间，并增加会话列表查询的工作量。
+`ClearAllSessions` 删除会话记录，陈旧索引成员由 `Sessions` 修剪或随索引 TTL 到期回收。创建操作也会在因容量不足拒绝用户前清理陈旧成员。并发登录可能保留，并仍可列出；清理不提供统一时间点的原子撤销。修剪前，陈旧成员会占用索引空间，并增加会话列表查询的工作量。
 
 ## 自动流水线
 

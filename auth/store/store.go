@@ -12,6 +12,14 @@ import (
 // ErrStoreUnavailable 表示后端不可用。
 var ErrStoreUnavailable = errors.New("token store unavailable")
 
+// ErrSessionLimitReached reports that a user's session limit prevents creation.
+// ErrSessionLimitReached 表示用户的会话数量已达到上限，无法新增。
+var ErrSessionLimitReached = errors.New("session limit reached")
+
+// DefaultMaxSessionsPerUser is the default limit for built-in session stores.
+// DefaultMaxSessionsPerUser 是内置会话存储的默认单用户上限。
+const DefaultMaxSessionsPerUser = 255
+
 // SessionState stores session state for refresh rotation and revocation.
 // SessionState 保存 refresh 轮换与吊销所需的 session 状态。
 type SessionState struct {

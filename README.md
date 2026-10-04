@@ -54,6 +54,17 @@ Static password auth ignores the request username and returns the configured use
 
 This uses in-process session storage for one process; sessions are not shared across instances and do not survive process restarts.
 
+Both built-in session stores allow up to 255 unexpired sessions per user by default. Choose a different limit in application code through `NewMemoryStoreWithLimit` or `NewWithLimit`: zero disables the limit, positive values set the maximum, and negative values panic. For example, to disable the limit:
+
+```go
+memoryStore := authstore.NewMemoryStoreWithLimit(0)
+redisStore := redissession.NewWithLimit(client, redissession.Options{}, 0)
+```
+
+Creation and capacity checks are atomic. Expired sessions do not consume slots; existing sessions are preserved and may refresh or be revoked. A full user cannot create another session: direct callers receive `authstore.ErrSessionLimitReached`, while both auth HTTP adapters return the normal `401 unauthorized` / `invalid credentials` response. No tokens or cookies are returned for the rejected login.
+
+Memory limits apply to one store instance. Redis limits apply within the configured namespace; all writers must use the same policy. Custom `SessionStore` implementations own their capacity policy. The limit counts stored, unexpired sessions, including session-only cookies; closing a browser does not revoke server-side state. It is not a global memory quota.
+
 Start with the package docs:
 
 - `http/routes/README.md`: route declarations, `Blueprint`, `NewHandler`, and lower-level `Route`/`Mount`

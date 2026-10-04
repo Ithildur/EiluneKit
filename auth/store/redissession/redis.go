@@ -33,10 +33,11 @@ const (
 // Store stores sessions in Redis.
 // Store 在 Redis 中保存 session。
 type Store struct {
-	client       *redis.Client
-	prefix       string
-	writeTimeout time.Duration
-	readTimeout  time.Duration
+	client             *redis.Client
+	prefix             string
+	writeTimeout       time.Duration
+	readTimeout        time.Duration
+	maxSessionsPerUser int
 }
 
 var (
@@ -73,11 +74,24 @@ var revokeSessionScript = redis.NewScript(revokeSessionLua)
 var rotateRefreshScript = redis.NewScript(rotateRefreshLua)
 var trimSessionIndexScript = redis.NewScript(trimSessionIndexLua)
 
-// New returns a Redis-backed session store.
+// New returns a Redis-backed session store with a limit of 255 sessions per user.
 // The caller owns client and must enable its ContextTimeoutEnabled option for store deadlines.
-// New 返回 Redis 版 session store。
+// New 返回 Redis 版 session store，每个用户最多保存 255 个会话。
 // client 由调用方管理，必须启用其 ContextTimeoutEnabled 选项才能执行 store 的 deadline。
 func New(client *redis.Client, opts Options) *Store {
+	return NewWithLimit(client, opts, authstore.DefaultMaxSessionsPerUser)
+}
+
+// NewWithLimit sets the maximum number of unexpired sessions per user.
+// Zero disables the limit; negative values panic. All writers sharing a namespace must use the same limit.
+// Client ownership and deadline requirements are the same as New.
+// NewWithLimit 设置每个用户未过期会话的数量上限。
+// 零值禁用上限；负数会 panic。共享命名空间的所有写入方必须使用相同上限。
+// client 的所有权和 deadline 要求与 New 相同。
+func NewWithLimit(client *redis.Client, opts Options, limit int) *Store {
+	if limit < 0 {
+		panic("redissession: session limit must not be negative")
+	}
 	prefix := opts.Prefix
 	if prefix == "" {
 		prefix = "auth:jwt:"
@@ -91,10 +105,11 @@ func New(client *redis.Client, opts Options) *Store {
 		writeTimeout = defaultWriteTimeout
 	}
 	return &Store{
-		client:       client,
-		prefix:       prefix,
-		writeTimeout: writeTimeout,
-		readTimeout:  readTimeout,
+		client:             client,
+		prefix:             prefix,
+		writeTimeout:       writeTimeout,
+		readTimeout:        readTimeout,
+		maxSessionsPerUser: limit,
 	}
 }
 
@@ -134,8 +149,10 @@ func (s *Store) BumpUserVersion(ctx context.Context, userID string) (int64, erro
 	return version, nil
 }
 
-// CreateSession stores a session.
-// CreateSession 保存 session。
+// CreateSession atomically stores a session within the per-user limit.
+// A full user returns authstore.ErrSessionLimitReached without creating a session.
+// CreateSession 在单用户上限内原子保存 session。
+// 用户会话已满时返回 authstore.ErrSessionLimitReached，不创建 session。
 func (s *Store) CreateSession(ctx context.Context, sessionID string, state authstore.SessionState) error {
 	ctx = contextutil.Require(ctx)
 	if s == nil || s.client == nil {
@@ -168,18 +185,22 @@ func (s *Store) CreateSession(ctx context.Context, sessionID string, state auths
 		sessionIndexTTLGrace.Milliseconds(),
 		now.Unix(),
 		now.UnixMilli(),
-	).Result()
+		s.maxSessionsPerUser,
+		s.sessionKey(""),
+	).Int()
 	if err != nil {
 		return authstore.ErrStoreUnavailable
 	}
-	created, err := scriptBoolResult(res)
-	if err != nil {
-		return err
-	}
-	if !created {
+	switch res {
+	case 0:
 		return errors.New("session already expired")
+	case 1:
+		return nil
+	case 2:
+		return authstore.ErrSessionLimitReached
+	default:
+		return fmt.Errorf("unexpected session creation result: %d", res)
 	}
-	return nil
 }
 
 // Session returns the session when still active.

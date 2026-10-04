@@ -14,11 +14,13 @@ import (
 // MemoryStore keeps sessions in memory.
 // MemoryStore 在内存中保存 session。
 type MemoryStore struct {
-	mu            sync.RWMutex
-	sessions      map[string]SessionState
-	userVersions  map[string]int64
-	lastPrune     time.Time
-	pruneInterval time.Duration
+	mu                 sync.RWMutex
+	sessions           map[string]SessionState
+	userSessions       map[string]map[string]struct{}
+	userVersions       map[string]int64
+	maxSessionsPerUser int
+	lastPrune          time.Time
+	pruneInterval      time.Duration
 }
 
 var (
@@ -28,13 +30,26 @@ var (
 	_ SessionCleaner     = (*MemoryStore)(nil)
 )
 
-// NewMemoryStore returns an in-memory SessionStore.
-// NewMemoryStore 返回内存版 SessionStore。
+// NewMemoryStore returns an in-memory SessionStore with a limit of 255 sessions per user.
+// NewMemoryStore 返回内存版 SessionStore，每个用户最多保存 255 个会话。
 func NewMemoryStore() *MemoryStore {
+	return NewMemoryStoreWithLimit(DefaultMaxSessionsPerUser)
+}
+
+// NewMemoryStoreWithLimit sets the maximum number of unexpired sessions per user.
+// Zero disables the limit; negative values panic.
+// NewMemoryStoreWithLimit 设置每个用户未过期会话的数量上限。
+// 零值禁用上限；负数会 panic。
+func NewMemoryStoreWithLimit(limit int) *MemoryStore {
+	if limit < 0 {
+		panic("store: session limit must not be negative")
+	}
 	return &MemoryStore{
-		sessions:      make(map[string]SessionState),
-		userVersions:  make(map[string]int64),
-		pruneInterval: time.Minute,
+		sessions:           make(map[string]SessionState),
+		userSessions:       make(map[string]map[string]struct{}),
+		userVersions:       make(map[string]int64),
+		maxSessionsPerUser: limit,
+		pruneInterval:      time.Minute,
 	}
 }
 
@@ -73,8 +88,10 @@ func (s *MemoryStore) BumpUserVersion(ctx context.Context, userID string) (int64
 	return next, nil
 }
 
-// CreateSession stores a session.
-// CreateSession 保存 session。
+// CreateSession stores a session, returning ErrSessionLimitReached when the user is full.
+// Replacing an existing session for the same user does not consume another slot.
+// CreateSession 保存 session；用户会话已满时返回 ErrSessionLimitReached。
+// 替换同一用户已有的 session 不占用额外名额。
 func (s *MemoryStore) CreateSession(ctx context.Context, sessionID string, state SessionState) error {
 	contextutil.Require(ctx)
 	if s == nil {
@@ -92,8 +109,24 @@ func (s *MemoryStore) CreateSession(ctx context.Context, sessionID string, state
 	}
 	s.pruneExpired(now, false)
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.maxSessionsPerUser > 0 && len(s.userSessions[state.UserID]) >= s.maxSessionsPerUser {
+		for id := range s.userSessions[state.UserID] {
+			if !s.sessions[id].ExpiresAt.After(now) {
+				s.deleteSession(id)
+			}
+		}
+		_, replacing := s.userSessions[state.UserID][sessionID]
+		if !replacing && len(s.userSessions[state.UserID]) >= s.maxSessionsPerUser {
+			return ErrSessionLimitReached
+		}
+	}
+	s.deleteSession(sessionID)
+	if s.userSessions[state.UserID] == nil {
+		s.userSessions[state.UserID] = make(map[string]struct{})
+	}
 	s.sessions[sessionID] = state
-	s.mu.Unlock()
+	s.userSessions[state.UserID][sessionID] = struct{}{}
 	return nil
 }
 
@@ -119,7 +152,7 @@ func (s *MemoryStore) Session(ctx context.Context, sessionID string) (SessionSta
 	if !item.ExpiresAt.After(now) {
 		s.mu.Lock()
 		if current, ok := s.sessions[sessionID]; ok && !current.ExpiresAt.After(now) {
-			delete(s.sessions, sessionID)
+			s.deleteSession(sessionID)
 		}
 		s.mu.Unlock()
 		return SessionState{}, false, nil
@@ -158,7 +191,7 @@ func (s *MemoryStore) RotateRefresh(ctx context.Context, sessionID, userID strin
 		return false, nil
 	}
 	if !item.ExpiresAt.After(now) {
-		delete(s.sessions, sessionID)
+		s.deleteSession(sessionID)
 		return false, nil
 	}
 	if item.UserID != userID || item.RefreshID != oldRefreshID {
@@ -183,7 +216,7 @@ func (s *MemoryStore) RevokeSession(ctx context.Context, sessionID string) error
 		return nil
 	}
 	s.mu.Lock()
-	delete(s.sessions, sessionID)
+	s.deleteSession(sessionID)
 	s.mu.Unlock()
 	return nil
 }
@@ -204,8 +237,9 @@ func (s *MemoryStore) Sessions(ctx context.Context, userID string) ([]SessionInf
 
 	s.mu.RLock()
 	out := make([]SessionInfo, 0)
-	for sessionID, item := range s.sessions {
-		if item.UserID != userID || !item.ExpiresAt.After(now) {
+	for sessionID := range s.userSessions[userID] {
+		item := s.sessions[sessionID]
+		if !item.ExpiresAt.After(now) {
 			continue
 		}
 		out = append(out, SessionInfo{
@@ -237,10 +271,8 @@ func (s *MemoryStore) ClearUserSessions(ctx context.Context, userID string) erro
 		return nil
 	}
 	s.mu.Lock()
-	for sessionID, item := range s.sessions {
-		if item.UserID == userID {
-			delete(s.sessions, sessionID)
-		}
+	for sessionID := range s.userSessions[userID] {
+		s.deleteSession(sessionID)
 	}
 	s.mu.Unlock()
 	return nil
@@ -255,6 +287,7 @@ func (s *MemoryStore) ClearAllSessions(ctx context.Context) error {
 	}
 	s.mu.Lock()
 	s.sessions = make(map[string]SessionState)
+	s.userSessions = make(map[string]map[string]struct{})
 	s.lastPrune = time.Time{}
 	s.mu.Unlock()
 	return nil
@@ -277,9 +310,24 @@ func (s *MemoryStore) pruneExpired(now time.Time, force bool) {
 	}
 	for k, v := range s.sessions {
 		if !v.ExpiresAt.After(now) {
-			delete(s.sessions, k)
+			s.deleteSession(k)
 		}
 	}
 	s.lastPrune = now
 	s.mu.Unlock()
+}
+
+// deleteSession updates both indexes while the caller holds s.mu for writing.
+// deleteSession 在调用方持有 s.mu 写锁时同步更新两个索引。
+func (s *MemoryStore) deleteSession(sessionID string) {
+	state, ok := s.sessions[sessionID]
+	if !ok {
+		return
+	}
+	delete(s.sessions, sessionID)
+	ids := s.userSessions[state.UserID]
+	delete(ids, sessionID)
+	if len(ids) == 0 {
+		delete(s.userSessions, state.UserID)
+	}
 }

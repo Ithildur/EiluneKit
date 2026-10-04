@@ -54,6 +54,17 @@ if err := authHandler.Register(r); err != nil {
 
 该组合使用单进程内 session store；多实例之间不共享 session，进程重启后 session 会失效。
 
+两种内置 session store 默认每个用户最多保存 255 个未过期会话。下游代码通过 `NewMemoryStoreWithLimit` 或 `NewWithLimit` 指定上限：零值禁用上限，正数指定最大数量，负数会 panic。例如，禁用上限：
+
+```go
+memoryStore := authstore.NewMemoryStoreWithLimit(0)
+redisStore := redissession.NewWithLimit(client, redissession.Options{}, 0)
+```
+
+容量检查和创建原子执行。过期会话不占名额；已有会话保留，仍可刷新或吊销。用户会话已满时不能新增：直接调用返回 `authstore.ErrSessionLimitReached`，两个 auth HTTP 入口均返回普通的 `401 unauthorized` / `invalid credentials`。被拒绝的登录不会返回 token 或设置 cookie。
+
+内存上限作用于单个 store 实例；Redis 上限作用于配置的命名空间，所有写入方必须采用相同策略。自定义 `SessionStore` 自行负责容量策略。计数包含已保存且未过期的 session-only 会话；关闭浏览器不会吊销服务端状态。这不是全局内存配额。
+
 从包文档开始：
 
 - `http/routes/README_CN.md`：路由声明、`Blueprint`、`NewHandler` 和更底层的 `Route`/`Mount`
