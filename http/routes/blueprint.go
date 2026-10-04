@@ -15,18 +15,15 @@ import (
 // 调用 NewBlueprint，使用 Get/Post/... 添加路由，再通过 Mount 或 MountAt 挂载。
 // Nil Blueprint 无效，使用时会 panic。
 type Blueprint struct {
-	routes     []Route
-	tags       []string
-	auth       AuthRequirement
-	hasAuth    bool
-	middleware []Middleware
+	routes   []Route
+	defaults routeDefaults
 }
 
 // BlueprintOption configures defaults for routes added to a Blueprint.
 // BlueprintOption 配置 Blueprint 中新增路由的默认值。
-type BlueprintOption func(*blueprintConfig)
+type BlueprintOption func(*routeDefaults)
 
-type blueprintConfig struct {
+type routeDefaults struct {
 	tags       []string
 	auth       AuthRequirement
 	hasAuth    bool
@@ -36,7 +33,7 @@ type blueprintConfig struct {
 // DefaultTags prepends tags to routes added to a Blueprint.
 // DefaultTags 为 Blueprint 中新增路由预置 tags。
 func DefaultTags(tags ...string) BlueprintOption {
-	return func(c *blueprintConfig) {
+	return func(c *routeDefaults) {
 		c.tags = append(c.tags, tags...)
 	}
 }
@@ -46,7 +43,7 @@ func DefaultTags(tags ...string) BlueprintOption {
 // DefaultAuth 设置默认认证要求。
 // AuthRequired 路由运行时要求已认证 context。
 func DefaultAuth(auth AuthRequirement) BlueprintOption {
-	return func(c *blueprintConfig) {
+	return func(c *routeDefaults) {
 		c.auth = auth
 		c.hasAuth = true
 	}
@@ -55,7 +52,7 @@ func DefaultAuth(auth AuthRequirement) BlueprintOption {
 // DefaultMiddleware prepends middleware to routes added to a Blueprint.
 // DefaultMiddleware 为 Blueprint 中新增路由预置最外层中间件。
 func DefaultMiddleware(mw ...Middleware) BlueprintOption {
-	return func(c *blueprintConfig) {
+	return func(c *routeDefaults) {
 		c.middleware = append(c.middleware, mw...)
 	}
 }
@@ -92,19 +89,12 @@ func Use(mw ...Middleware) RouteOption {
 
 // IncludeOption modifies child routes during Include.
 // IncludeOption 在 Include 时修改子路由。
-type IncludeOption func(*includeConfig)
-
-type includeConfig struct {
-	tags       []string
-	auth       AuthRequirement
-	hasAuth    bool
-	middleware []Middleware
-}
+type IncludeOption func(*routeDefaults)
 
 // IncludeTags appends tags to included routes.
 // IncludeTags 为 include 的路由追加 tags。
 func IncludeTags(tags ...string) IncludeOption {
-	return func(c *includeConfig) {
+	return func(c *routeDefaults) {
 		c.tags = append(c.tags, tags...)
 	}
 }
@@ -114,7 +104,7 @@ func IncludeTags(tags ...string) IncludeOption {
 // IncludeAuth 为 include 的路由设置认证要求。
 // AuthRequired 路由运行时要求已认证 context。
 func IncludeAuth(auth AuthRequirement) IncludeOption {
-	return func(c *includeConfig) {
+	return func(c *routeDefaults) {
 		c.auth = auth
 		c.hasAuth = true
 	}
@@ -123,7 +113,7 @@ func IncludeAuth(auth AuthRequirement) IncludeOption {
 // IncludeMiddleware prepends middleware to included routes.
 // IncludeMiddleware 为 include 的路由预置最外层中间件。
 func IncludeMiddleware(mw ...Middleware) IncludeOption {
-	return func(c *includeConfig) {
+	return func(c *routeDefaults) {
 		c.middleware = append(c.middleware, mw...)
 	}
 }
@@ -131,19 +121,15 @@ func IncludeMiddleware(mw ...Middleware) IncludeOption {
 // NewBlueprint returns an empty Blueprint.
 // NewBlueprint 返回空 Blueprint。
 func NewBlueprint(opts ...BlueprintOption) *Blueprint {
-	var cfg blueprintConfig
+	var cfg routeDefaults
 	for _, opt := range opts {
 		if opt != nil {
 			opt(&cfg)
 		}
 	}
-	return &Blueprint{
-		routes:     make([]Route, 0),
-		tags:       append([]string(nil), cfg.tags...),
-		auth:       cfg.auth,
-		hasAuth:    cfg.hasAuth,
-		middleware: append([]Middleware(nil), cfg.middleware...),
-	}
+	cfg.tags = slices.Clone(cfg.tags)
+	cfg.middleware = slices.Clone(cfg.middleware)
+	return &Blueprint{defaults: cfg}
 }
 
 // Add adds routes.
@@ -168,14 +154,14 @@ func (b *Blueprint) Add(routeList ...Route) {
 }
 
 func (b *Blueprint) withDefaults(route Route) Route {
-	if len(b.tags) > 0 {
-		route.Tags = slices.Concat(b.tags, route.Tags)
+	if len(b.defaults.tags) > 0 {
+		route.Tags = slices.Concat(b.defaults.tags, route.Tags)
 	}
-	if b.hasAuth && route.Auth == "" {
-		route.Auth = b.auth
+	if b.defaults.hasAuth && route.Auth == "" {
+		route.Auth = b.defaults.auth
 	}
-	if len(b.middleware) > 0 {
-		route.Middleware = slices.Concat(b.middleware, route.Middleware)
+	if len(b.defaults.middleware) > 0 {
+		route.Middleware = slices.Concat(b.defaults.middleware, route.Middleware)
 	}
 	return route
 }
@@ -249,7 +235,7 @@ func (b *Blueprint) Include(prefix string, child *Blueprint, opts ...IncludeOpti
 	b = requireBlueprint(b)
 	child = requireBlueprint(child)
 
-	var cfg includeConfig
+	var cfg routeDefaults
 	for _, opt := range opts {
 		if opt != nil {
 			opt(&cfg)

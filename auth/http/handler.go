@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	stdhttp "net/http"
-	"net/netip"
 	"strings"
 	"time"
 	"uuid"
@@ -332,7 +331,7 @@ func (h *Handler) loginLockoutKey(r *stdhttp.Request, username string) (string, 
 		return key, nil
 	}
 	ip, ok := clientip.FromRequest(r, clientip.Options{
-		TrustedProxies: append([]netip.Prefix(nil), h.options.TrustedProxies...),
+		TrustedProxies: h.options.TrustedProxies,
 		Headers:        h.options.ClientIPHeaders,
 	})
 	if !ok {

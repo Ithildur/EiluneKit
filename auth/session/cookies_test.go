@@ -29,7 +29,7 @@ func TestDefaultCookieConfig(t *testing.T) {
 			name:   "trusts_forwarded_proto_from_trusted_proxy",
 			remote: "127.0.0.1:1234",
 			trust: session.CookieTrustOptions{
-				TrustedProxies: []netip.Prefix{mustPrefix(t, "127.0.0.1/32")},
+				TrustedProxies: []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")},
 			},
 			secure:   true,
 			sameSite: http.SameSiteNoneMode,
@@ -88,13 +88,4 @@ func TestSetRefreshCookieLifetime(t *testing.T) {
 			t.Fatalf("expected session cookie without expiration, got %s", cookie.Expires.UTC().Format(time.RFC3339))
 		}
 	})
-}
-
-func mustPrefix(t *testing.T, raw string) netip.Prefix {
-	t.Helper()
-	prefix, err := netip.ParsePrefix(raw)
-	if err != nil {
-		t.Fatalf("parse prefix %q: %v", raw, err)
-	}
-	return prefix
 }

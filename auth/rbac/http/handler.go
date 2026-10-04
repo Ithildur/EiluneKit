@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/netip"
 	"strings"
 	"time"
 
@@ -296,7 +295,7 @@ func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) lockoutKey(r *http.Request, username string) (string, error) {
 	ip, ok := clientip.FromRequest(r, clientip.Options{
-		TrustedProxies: append([]netip.Prefix(nil), h.options.TrustedProxies...),
+		TrustedProxies: h.options.TrustedProxies,
 		Headers:        h.options.ClientIPHeaders,
 	})
 	if !ok {

@@ -1044,7 +1044,7 @@ func TestLoginRateLimit(t *testing.T) {
 					Requests:       1,
 					Window:         time.Minute,
 					IPv4PrefixBits: 32,
-					TrustedProxies: []netip.Prefix{mustPrefix(t, "192.0.2.0/24")},
+					TrustedProxies: []netip.Prefix{netip.MustParsePrefix("192.0.2.0/24")},
 				},
 			},
 			run: func(t *testing.T, r http.Handler) {
@@ -1096,7 +1096,7 @@ func TestLoginClientIPHeaders(t *testing.T) {
 					calls++
 					return "", false, nil
 				}),
-				TrustedProxies:  []netip.Prefix{mustPrefix(t, "192.0.2.0/24")},
+				TrustedProxies:  []netip.Prefix{netip.MustParsePrefix("192.0.2.0/24")},
 				ClientIPHeaders: tc.headers,
 				RateLimit: &authhttp.RateLimitOptions{
 					Disabled: tc.lockout, Requests: 1, Window: time.Minute, IPv4PrefixBits: 32,
@@ -1147,15 +1147,6 @@ func cookieByName(cookies []*http.Cookie, name string) *http.Cookie {
 		}
 	}
 	return nil
-}
-
-func mustPrefix(t *testing.T, raw string) netip.Prefix {
-	t.Helper()
-	prefix, err := netip.ParsePrefix(raw)
-	if err != nil {
-		t.Fatalf("parse prefix %q: %v", raw, err)
-	}
-	return prefix
 }
 
 func assertPersistentCookie(t *testing.T, cookie *http.Cookie) {

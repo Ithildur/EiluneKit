@@ -55,30 +55,15 @@ func FromRequest(r *http.Request, opts Options) (netip.Addr, bool) {
 	if r == nil {
 		return netip.Addr{}, false
 	}
-	if len(opts.TrustedProxies) > 0 {
-		return fromTrustedRequest(r, opts)
-	}
-	return FromRemote(r.RemoteAddr)
-}
-
-func fromTrustedRequest(r *http.Request, opts Options) (netip.Addr, bool) {
-	if r == nil {
-		return netip.Addr{}, false
-	}
 	remote, ok := FromRemote(r.RemoteAddr)
 	if !ok {
 		return netip.Addr{}, false
 	}
-	if len(opts.TrustedProxies) == 0 || !isTrustedIP(remote, opts.TrustedProxies) {
+	if !isTrustedIP(remote, opts.TrustedProxies) {
 		return remote, true
 	}
 
-	candidates := forwardedCandidates(r, opts.Headers)
-	if len(candidates) == 0 {
-		return remote, true
-	}
-
-	for _, ip := range slices.Backward(candidates) {
+	for _, ip := range slices.Backward(forwardedCandidates(r.Header, opts.Headers)) {
 		if !isTrustedIP(ip, opts.TrustedProxies) {
 			return ip, true
 		}
@@ -87,10 +72,7 @@ func fromTrustedRequest(r *http.Request, opts Options) (netip.Addr, bool) {
 	return remote, true
 }
 
-func forwardedCandidates(r *http.Request, headers []string) []netip.Addr {
-	if r == nil {
-		return nil
-	}
+func forwardedCandidates(header http.Header, headers []string) []netip.Addr {
 	if headers == nil {
 		headers = []string{"X-Forwarded-For", "X-Real-IP", "Forwarded", "True-Client-IP", "CF-Connecting-IP"}
 	}
@@ -98,11 +80,11 @@ func forwardedCandidates(r *http.Request, headers []string) []netip.Addr {
 		var ips []netip.Addr
 		switch http.CanonicalHeaderKey(name) {
 		case "Forwarded":
-			ips = parseForwardedForList(r.Header.Get(name))
+			ips = parseForwardedForList(header.Get(name))
 		case "X-Forwarded-For":
-			ips = parseXForwardedForList(r.Header.Get(name))
+			ips = parseXForwardedForList(header.Get(name))
 		default:
-			if ip, ok := parseSingleIPHeader(r.Header.Get(name)); ok {
+			if ip, ok := parseSingleIPHeader(header.Get(name)); ok {
 				ips = []netip.Addr{ip}
 			}
 		}
