@@ -66,10 +66,16 @@ var ErrSessionListUnsupported = authjwt.ErrSessionListUnsupported
 // ErrSessionClearUnsupported 表示 manager 不支持清理 session。
 var ErrSessionClearUnsupported = authjwt.ErrSessionClearUnsupported
 
+// ErrUserIDInvalid reports a user ID with surrounding whitespace.
+// ErrUserIDInvalid 表示 user ID 含有首尾空白。
+var ErrUserIDInvalid = authjwt.ErrUserIDInvalid
+
 // LoginAuthenticator verifies login credentials.
 // Implementations may ignore username.
+// Successful authentication must return a non-empty user ID without surrounding whitespace.
 // LoginAuthenticator 校验登录凭据。
 // 实现可以忽略 username。
+// 认证成功必须返回非空且不含首尾空白的 user ID。
 type LoginAuthenticator interface {
 	Authenticate(ctx context.Context, username, password string) (userID string, ok bool, err error)
 }

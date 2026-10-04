@@ -139,14 +139,17 @@ spec, err := openapi.Generate(routeList, openapi.Options{
 - `RefreshCookieName`, `CSRFCookieName`, `CSRFHeaderName`: cookie and header names
 - `CookieSameSite`: optional auth cookie `SameSite` override; zero keeps automatic TLS/proxy-derived behavior
 - `TrustedProxies`: forwarded-header trust boundary for rate limiting and secure-cookie detection
+- `ClientIPHeaders`: accepted client IP headers in priority order for login lockout and rate limiting. Nil uses `X-Forwarded-For`, `X-Real-IP`, `Forwarded`, `True-Client-IP`, then `CF-Connecting-IP`; `[]string{}` disables them. A non-empty list replaces the defaults, for example `[]string{"X-Forwarded-For"}`. `RateLimit.ClientIPHeaders` overrides this setting when non-nil. Cookie scheme detection is separate.
 - `MaxBodyBytes`: request body size limit for auth endpoints
 - `RateLimit`: login rate-limit settings
-- `LoginLockout`: optional failed-login lockout. On credential failure it records the lockout key, returns `429 login_locked` when the key reaches its threshold, and clears the key after a successful login.
+- `LoginLockout`: optional failed-login lockout. On credential failure it records the lockout key and rejects it once the threshold is reached. Successful login clears the key. Credential, lockout, and capacity rejections all return `401 unauthorized` with `invalid credentials`; independent request rate limits return 429.
 - `LoginLockoutKeyFunc`: optional key function for `LoginLockout`; the default key uses the exact client IP. When `LoginLockout` is set, the key must be non-empty. Include username only when `LoginAuthenticator` treats username as meaningful.
 - `Events`: auth lifecycle hooks. `Events.Login` runs after credentials are accepted and tokens are issued, but before cookies and response body are written; returning an error attempts to revoke the new refresh session and fails the login request. Hooks may be called concurrently.
 - `Logger`: optional `*slog.Logger` for auth lifecycle hook failures and revoke-compensation failures.
 
 Forwarded headers are trusted only when `TrustedProxies` is set. The default rate-limit key uses `RemoteAddr`.
+
+Only accept headers that your trusted proxy sanitizes or sets. Header priority does not establish trust in a header's contents. Configuration slices are copied when the handler is constructed.
 
 Use `auth.NewMemoryLockout` for single-process deployments:
 
@@ -163,12 +166,16 @@ authHandler, err := authhttp.NewHandler(manager, authhttp.Options{
 
 For multi-instance deployments, pass a Redis or SQL-backed `auth.Lockout` so failed-login state is shared across processes.
 
+`MemoryLockoutOptions.CapacityPolicy` defaults to `auth.AllowUntrackedKeys`: at capacity, an unknown key can still authenticate, but a new failure returns `auth.ErrLockoutCapacity` internally. `auth.RejectNewKeys` rejects unknown keys before verification when full. Both policies only remove expired records. Keep independent login rate limiting enabled, especially with `AllowUntrackedKeys`. An unsupported policy panics at construction.
+
+Failed-login responses do not expose lockout or capacity details. This does not guarantee indistinguishable timing or successful-login behavior: `RejectNewKeys` can reject valid credentials before verification. Other backend errors retain their normal handling.
+
 By default, cookie `Secure` and `SameSite` are derived from the request: TLS always enables secure cookies, and `X-Forwarded-Proto: https` only counts from trusted proxies. Set `CookieSameSite` when deployment policy needs an explicit mode, for example `http.SameSiteLaxMode` for same-site apps or `http.SameSiteNoneMode` for cross-site SPAs.
 
 ## Contracts
 
 - `NewHandler` requires both a `TokenManager` and `Options.LoginAuthenticator`.
 - `NewHandler` takes one `Options` struct; fields other than `LoginAuthenticator` fall back to defaults when left zero-valued.
-- `NewStaticPassword` requires a non-empty user ID and password.
+- `NewStaticPassword` requires a non-empty user ID without surrounding whitespace and a non-empty password. Custom login authenticators must return IDs with the same constraints.
 - `VerifyCredential` performs exact byte comparison and is suitable for pre-hashed or application-derived credentials.
 - Use `auth/rbac` and `auth/rbac/http` when the application needs multiple users, roles, or scopes.

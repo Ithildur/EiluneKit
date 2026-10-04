@@ -61,9 +61,11 @@ func (s *Service) Login(ctx context.Context, username, password string, opts Iss
 	if err != nil || !ok {
 		return Tokens{}, ok, err
 	}
-	userID = strings.TrimSpace(userID)
-	if userID == "" {
+	if strings.TrimSpace(userID) == "" {
 		return Tokens{}, false, ErrUserIDEmpty
+	}
+	if userID != strings.TrimSpace(userID) {
+		return Tokens{}, false, ErrUserIDInvalid
 	}
 
 	access, accessExp, refresh, refreshExp, err := s.auth.IssueSessionTokens(ctx, userID, opts)

@@ -9,8 +9,10 @@ import (
 )
 
 // User is the auth-facing user state.
+// ID must be non-empty and have no surrounding whitespace.
 // Scopes is copied before being stored or returned.
 // User 是认证层需要的用户状态。
+// ID 必须非空，且不能包含首尾空白。
 // Scopes 在存储或返回前会复制。
 type User struct {
 	ID       string

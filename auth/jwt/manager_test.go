@@ -9,6 +9,8 @@ import (
 
 	authjwt "github.com/Ithildur/EiluneKit/auth/jwt"
 	authstore "github.com/Ithildur/EiluneKit/auth/store"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 func TestRotateRefreshTokensMemoryStoreSingleSuccess(t *testing.T) {
@@ -347,4 +349,72 @@ func TestManagerRejectsMissingIDs(t *testing.T) {
 
 type sessionStoreOnly struct {
 	authstore.SessionStore
+}
+
+func TestManagerRejectsUserIDAliases(t *testing.T) {
+	const signingKey = "0123456789abcdef0123456789abcdef"
+	mgr, err := authjwt.New(signingKey, authstore.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	access, _, refresh, _, err := mgr.IssueSessionTokens(t.Context(), "user-1", authjwt.IssueOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims, ok, err := mgr.ValidateAccessToken(t.Context(), access)
+	if err != nil || !ok {
+		t.Fatalf("validate access: ok=%v err=%v", ok, err)
+	}
+	for _, id := range []string{" user-1", "user-1\t", "\u00a0user-1\u00a0"} {
+		t.Run(id, func(t *testing.T) {
+			if _, _, _, _, err := mgr.IssueSessionTokens(t.Context(), id, authjwt.IssueOptions{}); !errors.Is(err, authjwt.ErrUserIDInvalid) {
+				t.Fatalf("issue: %v", err)
+			}
+			if _, err := mgr.Sessions(t.Context(), id); !errors.Is(err, authjwt.ErrUserIDInvalid) {
+				t.Fatalf("list: %v", err)
+			}
+			if _, err := mgr.RevokeSession(t.Context(), id, claims.SessionID); !errors.Is(err, authjwt.ErrUserIDInvalid) {
+				t.Fatalf("revoke: %v", err)
+			}
+			if err := mgr.RevokeAllSessions(t.Context(), id); !errors.Is(err, authjwt.ErrUserIDInvalid) {
+				t.Fatalf("revoke all: %v", err)
+			}
+			if err := mgr.ClearUserSessions(t.Context(), id); !errors.Is(err, authjwt.ErrUserIDInvalid) {
+				t.Fatalf("clear: %v", err)
+			}
+		})
+	}
+	for _, token := range []string{access, refresh} {
+		var claims authjwt.Claims
+		if _, _, err := jwt.NewParser().ParseUnverified(token, &claims); err != nil {
+			t.Fatal(err)
+		}
+		claims.Subject = " user-1 "
+		alias, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(signingKey))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok, err := mgr.ValidateAccessToken(t.Context(), alias); err != nil || ok {
+			t.Fatalf("access validation accepted alias: ok=%v err=%v", ok, err)
+		}
+		if _, ok, err := mgr.ValidateRefreshToken(t.Context(), alias); err != nil || ok {
+			t.Fatalf("refresh validation accepted alias: ok=%v err=%v", ok, err)
+		}
+		if _, ok, err := mgr.RotateRefreshTokens(t.Context(), alias); err != nil || ok {
+			t.Fatalf("rotation accepted alias: ok=%v err=%v", ok, err)
+		}
+		if err := mgr.RevokeAccess(t.Context(), alias); !errors.Is(err, authjwt.ErrUnauthorized) {
+			t.Fatalf("access revocation accepted alias: %v", err)
+		}
+		if err := mgr.RevokeRefresh(t.Context(), alias); !errors.Is(err, authjwt.ErrUnauthorized) {
+			t.Fatalf("refresh revocation accepted alias: %v", err)
+		}
+	}
+	if _, ok, err := mgr.ValidateAccessToken(t.Context(), access); err != nil || !ok {
+		t.Fatalf("alias operations affected the canonical session: ok=%v err=%v", ok, err)
+	}
+	sessions, err := mgr.Sessions(t.Context(), "user-1")
+	if err != nil || len(sessions) != 1 {
+		t.Fatalf("alias operations changed stored sessions: count=%d err=%v", len(sessions), err)
+	}
 }

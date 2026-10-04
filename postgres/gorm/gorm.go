@@ -31,7 +31,9 @@ type Config struct {
 	MaxIdleConns         int
 	ConnMaxLifetime      time.Duration
 	PreferSimpleProtocol bool
-	Logger               logger.Interface
+	// Logger overrides the default logger, which omits SQL parameter values.
+	// Logger 覆盖默认日志器；默认日志器不输出 SQL 参数值。
+	Logger logger.Interface
 }
 
 // BuildDSN returns the Postgres DSN for cfg.
@@ -62,7 +64,10 @@ func Connect(ctx context.Context, cfg Config) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	gormCfg := &gorm.Config{DisableAutomaticPing: true}
+	gormCfg := &gorm.Config{
+		DisableAutomaticPing: true,
+		Logger:               parameterizedLogger{logger.Default},
+	}
 	if cfg.Logger != nil {
 		gormCfg.Logger = cfg.Logger
 	}

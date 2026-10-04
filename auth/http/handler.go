@@ -91,9 +91,14 @@ func (h *Handler) Routes() []routes.Route {
 	opts := h.options
 	var loginChain []func(stdhttp.Handler) stdhttp.Handler
 	rateLimitOpts := opts.RateLimit
-	if rateLimitOpts != nil && len(rateLimitOpts.TrustedProxies) == 0 && rateLimitOpts.KeyFunc == nil && len(opts.TrustedProxies) > 0 {
+	if rateLimitOpts != nil && rateLimitOpts.KeyFunc == nil {
 		rateLimitOpts = new(*rateLimitOpts)
-		rateLimitOpts.TrustedProxies = append([]netip.Prefix(nil), opts.TrustedProxies...)
+		if len(rateLimitOpts.TrustedProxies) == 0 {
+			rateLimitOpts.TrustedProxies = opts.TrustedProxies
+		}
+		if rateLimitOpts.ClientIPHeaders == nil {
+			rateLimitOpts.ClientIPHeaders = opts.ClientIPHeaders
+		}
 	}
 	if rate := LoginRateLimit(rateLimitOpts); rate != nil {
 		loginChain = append(loginChain, rate)
@@ -328,6 +333,7 @@ func (h *Handler) loginLockoutKey(r *stdhttp.Request, username string) (string, 
 	}
 	ip, ok := clientip.FromRequest(r, clientip.Options{
 		TrustedProxies: append([]netip.Prefix(nil), h.options.TrustedProxies...),
+		Headers:        h.options.ClientIPHeaders,
 	})
 	if !ok {
 		return "", auth.ErrLockoutKeyRequired

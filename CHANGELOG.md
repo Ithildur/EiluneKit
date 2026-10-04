@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Breaking
+
+- Both auth HTTP adapters return `401 unauthorized` / `invalid credentials` for locked logins instead of `429 login_locked`. Capacity rejection uses the same response; independent request rate limits still return 429.
+- RBAC HTTP login now defaults to five requests per minute per client IP prefix (IPv4 /24, IPv6 /40). Configure `Options.RateLimit` to adjust it, or set `Disabled` when the application provides its own limiter.
+- `MemoryLockout.RecordFailure` returns `ErrLockoutCapacity` when a new record cannot fit after expiration cleanup. Existing unexpired records are no longer evicted. Direct callers must handle the capacity error; HTTP adapters conceal it as a normal credential rejection.
+- Client IP header precedence is now `X-Forwarded-For`, `X-Real-IP`, `Forwarded`, `True-Client-IP`, then `CF-Connecting-IP`. Deployments sending competing headers can resolve a different client IP. To preserve the previous order, explicitly configure `Forwarded`, `X-Forwarded-For`, `True-Client-IP`, `CF-Connecting-IP`, `X-Real-IP` through `clientip.Options.Headers` or the corresponding HTTP options.
+
+### Added
+
+- `MemoryLockoutOptions.CapacityPolicy` selects `AllowUntrackedKeys` (default) or `RejectNewKeys`. The former permits verification of unknown keys at capacity; the latter rejects them before verification. Both preserve active locks and the configured record limit.
+- Client IP header selection is configurable through `clientip.Options.Headers`, `middleware.RateLimitKeyOptions.Headers`, and auth HTTP `ClientIPHeaders` options. Nil uses the default order, a non-nil empty list disables forwarded IP headers, and a non-empty list replaces the default selection. Login rate limits inherit the handler's header selection unless explicitly overridden.
+
+### Security
+
+- Capacity pressure no longer deletes active login locks or unexpired failure counts. HTTP credential, lockout, and capacity rejections share the same status, body, and headers. Timing is not equalized; strict capacity policy can reject otherwise valid credentials.
+- Authentication rejects user IDs with surrounding whitespace instead of silently changing the authenticated identity. JWT session operations and token subjects follow the same rule; applications must provide non-empty IDs without surrounding whitespace.
+- `gorm.Connect` hides SQL query parameter values in its default logger, including after `db.Debug()`, while preserving query diagnostics. Explicit `Config.Logger` implementations retain their own parameter policy.
+- Text logging escapes non-printable characters in messages and quotes unsafe attribute keys, including group names, to prevent forged log records and fields.
+
 ## v0.4.3 - 2026-09-18
 
 ### Breaking

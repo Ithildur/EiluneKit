@@ -38,20 +38,24 @@ func VerifyCredential(expected, got string) bool {
 }
 
 // NewStaticPassword builds a LoginAuthenticator backed by one fixed password.
+// userID must be non-empty and have no surrounding whitespace.
 // NewStaticPassword 构造一个使用固定密码的 LoginAuthenticator。
+// userID 必须非空，且不能包含首尾空白。
 func NewStaticPassword(userID, expectedPassword string) (LoginAuthenticator, error) {
 	if strings.TrimSpace(userID) == "" {
 		return nil, ErrStaticPasswordUserIDEmpty
 	}
+	if userID != strings.TrimSpace(userID) {
+		return nil, ErrUserIDInvalid
+	}
 	if expectedPassword == "" {
 		return nil, ErrPasswordEmpty
 	}
-	principal := strings.TrimSpace(userID)
 	return LoginAuthenticatorFunc(func(ctx context.Context, username, password string) (string, bool, error) {
 		if !VerifyCredential(expectedPassword, password) {
 			return "", false, nil
 		}
-		return principal, true, nil
+		return userID, true, nil
 	}), nil
 }
 

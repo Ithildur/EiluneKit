@@ -6,6 +6,8 @@ import (
 	"encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -137,7 +139,7 @@ func TestEmptyPasswordPreservesLockoutAndShortCircuit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := rbachttp.NewHandler(service, rbachttp.Options{})
+	handler, err := rbachttp.NewHandler(service, rbachttp.Options{RateLimit: &rbachttp.RateLimitOptions{Disabled: true}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,20 +151,20 @@ func TestEmptyPasswordPreservesLockoutAndShortCircuit(t *testing.T) {
 	if w := serve(router, http.MethodPost, "/auth/login", wrong, nil); w.Code != http.StatusUnauthorized {
 		t.Fatalf("first failure: %d %s", w.Code, w.Body.String())
 	}
-	if w := serve(router, http.MethodPost, "/auth/login", wrong, nil); w.Code != http.StatusTooManyRequests {
+	if w := serve(router, http.MethodPost, "/auth/login", wrong, nil); w.Code != http.StatusUnauthorized {
 		t.Fatalf("lock: %d %s", w.Code, w.Body.String())
 	}
 	now = now.Add(2 * time.Minute)
 	checks := lockout.checks
 	for range 2 {
-		if w := serve(router, http.MethodPost, "/auth/login", `{"username":"alice","password":""}`, nil); w.Code != http.StatusTooManyRequests {
+		if w := serve(router, http.MethodPost, "/auth/login", `{"username":"alice","password":""}`, nil); w.Code != http.StatusUnauthorized {
 			t.Fatalf("empty password unlocked the caller: %d %s", w.Code, w.Body.String())
 		}
 	}
 	if lockout.checks != checks || verifications != 2 {
 		t.Fatal("empty password did not short-circuit")
 	}
-	if w := serve(router, http.MethodPost, "/auth/login", wrong, nil); w.Code != http.StatusTooManyRequests || verifications != 2 {
+	if w := serve(router, http.MethodPost, "/auth/login", wrong, nil); w.Code != http.StatusUnauthorized || verifications != 2 {
 		t.Fatalf("locked request reached verification: %d checks=%d", w.Code, verifications)
 	}
 	now = until
@@ -286,7 +288,11 @@ func TestHandlerLoginUsesBoundedLockoutKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new service: %v", err)
 	}
-	handler, err := rbachttp.NewHandler(service, rbachttp.Options{})
+	headers := []string{"X-Real-IP"}
+	handler, err := rbachttp.NewHandler(service, rbachttp.Options{
+		TrustedProxies:  []netip.Prefix{netip.MustParsePrefix("192.0.2.0/24")},
+		ClientIPHeaders: headers,
+	})
 	if err != nil {
 		t.Fatalf("new handler: %v", err)
 	}
@@ -294,6 +300,7 @@ func TestHandlerLoginUsesBoundedLockoutKey(t *testing.T) {
 	if err := handler.Register(router); err != nil {
 		t.Fatalf("register handler: %v", err)
 	}
+	headers[0] = "X-Forwarded-For"
 
 	username := strings.Repeat("a", 900*1024)
 	body, err := json.Marshal(map[string]string{
@@ -303,7 +310,11 @@ func TestHandlerLoginUsesBoundedLockoutKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal login body: %v", err)
 	}
-	rec := serve(router, http.MethodPost, "/auth/login", string(body), nil)
+	rec := serve(router, http.MethodPost, "/auth/login", string(body), func(req *http.Request) {
+		req.RemoteAddr = "192.0.2.10:1234"
+		req.Header.Set("X-Forwarded-For", "198.51.100.1")
+		req.Header.Set("X-Real-IP", "203.0.113.1")
+	})
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected status %d, got %d body=%s", http.StatusUnauthorized, rec.Code, rec.Body.String())
 	}
@@ -311,6 +322,9 @@ func TestHandlerLoginUsesBoundedLockoutKey(t *testing.T) {
 		t.Fatalf("expected one lockout key, got %d", len(lockout.keys))
 	}
 	key := lockout.keys[0]
+	if !strings.HasPrefix(key, "ip:203.0.113.1|") {
+		t.Fatalf("lockout ignored client IP header selection: %q", key)
+	}
 	if len(key) > 128 {
 		t.Fatalf("lockout key length = %d, want <= 128", len(key))
 	}
@@ -319,6 +333,124 @@ func TestHandlerLoginUsesBoundedLockoutKey(t *testing.T) {
 	}
 	if strings.Contains(key, strings.Repeat("a", 128)) {
 		t.Fatal("lockout key retained attacker-controlled username")
+	}
+}
+
+func TestLoginLockoutFailuresHaveIdenticalResponses(t *testing.T) {
+	var baseline *httptest.ResponseRecorder
+	for _, policy := range []authcore.CapacityPolicy{authcore.AllowUntrackedKeys, authcore.RejectNewKeys} {
+		for _, state := range []string{"empty", "full", "locked"} {
+			lockout := authcore.NewMemoryLockout(authcore.MemoryLockoutOptions{MaxKeys: 1, MaxFailures: 2, CapacityPolicy: policy})
+			if state == "full" {
+				for range 2 {
+					if _, _, err := lockout.RecordFailure(t.Context(), "unrelated"); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			manager, err := authjwt.New("0123456789abcdef0123456789abcdef", authstore.NewMemoryStore())
+			if err != nil {
+				t.Fatal(err)
+			}
+			calls, events := 0, 0
+			service, err := corerbac.NewService(corerbac.ServiceOptions{
+				Users: newTestUserStore(corerbac.User{ID: "user-1", Username: "alice"}),
+				Passwords: corerbac.PasswordVerifierFunc(func(_ context.Context, _ corerbac.User, password string) (bool, error) {
+					calls++
+					return password == "secret", nil
+				}),
+				Tokens: manager, Lockout: lockout,
+				Events: corerbac.Events{OnLoginFailure: func(context.Context, corerbac.LoginFailure) error { events++; return nil }},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			handler, err := rbachttp.NewHandler(service, rbachttp.Options{RateLimit: &rbachttp.RateLimitOptions{Disabled: true}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			router := chi.NewRouter()
+			if err := handler.Register(router); err != nil {
+				t.Fatal(err)
+			}
+			login := func(password string) *httptest.ResponseRecorder {
+				return serve(router, http.MethodPost, "/auth/login", `{"username":"alice","password":"`+password+`"}`, nil)
+			}
+			if state == "locked" {
+				login("wrong")
+				login("wrong")
+				calls, events = 0, 0
+			}
+			if baseline == nil {
+				baseline = login("wrong")
+				events = 0
+			}
+			for _, password := range []string{"wrong", "", "wrong"} {
+				rec := login(password)
+				if rec.Code != http.StatusUnauthorized || rec.Body.String() != baseline.Body.String() || !reflect.DeepEqual(rec.Header(), baseline.Header()) {
+					t.Fatalf("policy=%d state=%s leaked through response: %d %v %s", policy, state, rec.Code, rec.Header(), rec.Body.String())
+				}
+			}
+			if events != 3 {
+				t.Fatalf("policy=%d state=%s lost failure events: %d", policy, state, events)
+			}
+			if (state == "locked" || state == "full" && policy == authcore.RejectNewKeys) && calls != 0 {
+				t.Fatalf("policy=%d state=%s reached verification %d times", policy, state, calls)
+			}
+			rec := login("secret")
+			if state == "full" && policy == authcore.AllowUntrackedKeys {
+				if rec.Code != http.StatusOK {
+					t.Fatalf("capacity blocked valid credentials: %d %s", rec.Code, rec.Body.String())
+				}
+			} else if rec.Code != baseline.Code || rec.Body.String() != baseline.Body.String() || !reflect.DeepEqual(rec.Header(), baseline.Header()) {
+				t.Fatalf("denied valid credentials revealed state: %d %v %s", rec.Code, rec.Header(), rec.Body.String())
+			}
+		}
+	}
+}
+
+func TestLoginRateLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		opts     rbachttp.Options
+		wantLast int
+	}{
+		{"default", rbachttp.Options{}, http.StatusTooManyRequests},
+		{"disabled", rbachttp.Options{RateLimit: &rbachttp.RateLimitOptions{Disabled: true}}, http.StatusUnauthorized},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, router := newTestHandler(t, tc.opts)
+			for i := range 6 {
+				rec := serve(router, http.MethodPost, "/auth/login", `{"username":"alice","password":"wrong"}`, nil)
+				want := http.StatusUnauthorized
+				if i == 5 {
+					want = tc.wantLast
+				}
+				if rec.Code != want {
+					t.Fatalf("request %d: %d %s", i, rec.Code, rec.Body.String())
+				}
+			}
+		})
+	}
+	for _, headers := range [][]string{nil, {}} {
+		_, router := newTestHandler(t, rbachttp.Options{
+			TrustedProxies:  []netip.Prefix{netip.MustParsePrefix("192.0.2.0/24")},
+			ClientIPHeaders: []string{"X-Real-IP"},
+			RateLimit:       &rbachttp.RateLimitOptions{Requests: 1, IPv4PrefixBits: 32, ClientIPHeaders: headers},
+		})
+		for i, realIP := range []string{"203.0.113.1", "203.0.113.2"} {
+			rec := serve(router, http.MethodPost, "/auth/login", `{"username":"alice","password":"secret"}`, func(req *http.Request) {
+				req.Header.Set("X-Real-IP", realIP)
+				req.Header.Set("X-Forwarded-For", "198.51.100.1")
+			})
+			want := http.StatusOK
+			if headers != nil && i == 1 {
+				want = http.StatusTooManyRequests
+			}
+			if rec.Code != want {
+				t.Fatalf("request %d: %d %s", i, rec.Code, rec.Body.String())
+			}
+		}
 	}
 }
 

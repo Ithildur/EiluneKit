@@ -8,10 +8,53 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"testing"
+
+	"github.com/Ithildur/EiluneKit/clientip"
 
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
+
+func TestClientIPOptionsAreCaptured(t *testing.T) {
+	for _, tc := range []struct {
+		headers []string
+		want    string
+	}{
+		{[]string{"X-Real-IP"}, "203.0.113.1"},
+		{[]string{}, "192.0.2.10"},
+	} {
+		var output bytes.Buffer
+		proxies := []netip.Prefix{netip.MustParsePrefix("192.0.2.0/24")}
+		key := RateLimitKeyByIP(32, 128, RateLimitKeyOptions{TrustedProxies: proxies, Headers: tc.headers})
+		handler := AccessLog(AccessLogOptions{
+			Logger:   slog.New(slog.NewJSONHandler(&output, nil)),
+			ClientIP: clientip.Options{TrustedProxies: proxies, Headers: tc.headers},
+		})(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+		proxies[0] = netip.MustParsePrefix("10.0.0.0/8")
+		if len(tc.headers) > 0 {
+			tc.headers[0] = "X-Forwarded-For"
+		}
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.RemoteAddr = "192.0.2.10:1234"
+		req.Header.Set("X-Real-IP", "203.0.113.1")
+		req.Header.Set("X-Forwarded-For", "198.51.100.1")
+		got, err := key(req)
+		if err != nil || got != "v4:"+tc.want+"/32" {
+			t.Fatalf("unexpected rate key: %q, err=%v", got, err)
+		}
+		handler.ServeHTTP(httptest.NewRecorder(), req)
+		var record struct {
+			RemoteIP string `json:"remote_ip"`
+		}
+		if err := json.Unmarshal(output.Bytes(), &record); err != nil {
+			t.Fatal(err)
+		}
+		if record.RemoteIP != tc.want {
+			t.Fatalf("logged IP %q, want %q", record.RemoteIP, tc.want)
+		}
+	}
+}
 
 func TestAccessLogRequests(t *testing.T) {
 	var output bytes.Buffer

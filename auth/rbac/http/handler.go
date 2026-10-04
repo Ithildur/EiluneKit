@@ -11,6 +11,7 @@ import (
 	"time"
 
 	authcore "github.com/Ithildur/EiluneKit/auth"
+	authhttp "github.com/Ithildur/EiluneKit/auth/http"
 	corerbac "github.com/Ithildur/EiluneKit/auth/rbac"
 	"github.com/Ithildur/EiluneKit/clientip"
 	"github.com/Ithildur/EiluneKit/http/decoder"
@@ -121,6 +122,18 @@ func (h *Handler) Routes() []routes.Route {
 		http.StatusInternalServerError,
 		http.StatusServiceUnavailable,
 	)
+	if h.options.RateLimit != nil {
+		rateOpts := *h.options.RateLimit
+		if len(rateOpts.TrustedProxies) == 0 {
+			rateOpts.TrustedProxies = h.options.TrustedProxies
+		}
+		if rateOpts.ClientIPHeaders == nil {
+			rateOpts.ClientIPHeaders = h.options.ClientIPHeaders
+		}
+		if rate := authhttp.LoginRateLimit(&rateOpts); rate != nil {
+			loginOpts = append(loginOpts, routes.Use(rate))
+		}
+	}
 	loginOpts = append(loginOpts,
 		routes.Use(middleware.LimitBody(maxBytes)),
 		routes.Use(middleware.RequireJSONBody),
@@ -284,6 +297,7 @@ func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) lockoutKey(r *http.Request, username string) (string, error) {
 	ip, ok := clientip.FromRequest(r, clientip.Options{
 		TrustedProxies: append([]netip.Prefix(nil), h.options.TrustedProxies...),
+		Headers:        h.options.ClientIPHeaders,
 	})
 	if !ok {
 		return "", corerbac.ErrLockoutKeyRequired

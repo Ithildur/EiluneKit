@@ -2,6 +2,7 @@ package rbac
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -93,6 +94,13 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (Tokens, bool, er
 		return Tokens{}, false, nil
 	}
 	if until, locked, err := s.locked(ctx, req.LockoutKey); err != nil {
+		if errors.Is(err, ErrLockoutCapacity) {
+			if eventErr := s.emitLoginFailure(ctx, LoginFailure{
+				Username: req.Username, Reason: LoginFailureInvalidCredentials, At: s.now(),
+			}); eventErr != nil {
+				return Tokens{}, false, eventErr
+			}
+		}
 		return Tokens{}, false, err
 	} else if locked {
 		if err := s.emitLoginFailure(ctx, LoginFailure{
@@ -117,6 +125,9 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (Tokens, bool, er
 	}
 	if strings.TrimSpace(user.ID) == "" {
 		return Tokens{}, false, ErrUserIDRequired
+	}
+	if user.ID != strings.TrimSpace(user.ID) {
+		return Tokens{}, false, ErrUserIDInvalid
 	}
 	if user.Disabled {
 		if err := s.rejectLogin(ctx, req, user.ID, LoginFailureDisabled); err != nil {
@@ -335,8 +346,8 @@ func (s *Service) DeleteAPIToken(ctx context.Context, id string) (bool, error) {
 }
 
 func (s *Service) principalForClaims(ctx context.Context, claims authjwt.Claims) (authcore.Principal, bool, error) {
-	subject := strings.TrimSpace(claims.Subject)
-	if subject == "" {
+	subject := claims.Subject
+	if subject == "" || subject != strings.TrimSpace(subject) {
 		return authcore.Principal{}, false, nil
 	}
 	user, ok, err := s.users.GetUser(ctx, subject)
@@ -369,7 +380,7 @@ func (s *Service) clearLockout(ctx context.Context, key string) error {
 
 func (s *Service) rejectLogin(ctx context.Context, req LoginRequest, userID, reason string) error {
 	lockedUntil, locked, err := s.lockout.RecordFailure(ctx, req.LockoutKey)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrLockoutCapacity) {
 		return fmt.Errorf("record login failure: %w", err)
 	}
 	if err := s.emitLoginFailure(ctx, LoginFailure{
@@ -379,6 +390,9 @@ func (s *Service) rejectLogin(ctx context.Context, req LoginRequest, userID, rea
 		At:       s.now(),
 	}); err != nil {
 		return err
+	}
+	if err != nil {
+		return fmt.Errorf("record login failure: %w", err)
 	}
 	if locked {
 		return LockedError{Until: lockedUntil}

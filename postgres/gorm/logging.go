@@ -8,6 +8,18 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+type parameterizedLogger struct {
+	logger.Interface
+}
+
+func (l parameterizedLogger) LogMode(level logger.LogLevel) logger.Interface {
+	return parameterizedLogger{l.Interface.LogMode(level)}
+}
+
+func (l parameterizedLogger) ParamsFilter(_ context.Context, sql string, _ ...any) (string, []any) {
+	return sql, nil
+}
+
 // LogOptions configures NewLogger.
 // LogOptions 配置 NewLogger。
 type LogOptions struct {

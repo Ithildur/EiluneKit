@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -459,8 +460,63 @@ func TestLoginLockoutRecordsFailuresAndClearsAfterSuccess(t *testing.T) {
 		t.Fatalf("expected successful login to clear lockout state, got %d body=%s", rec.Code, rec.Body.String())
 	}
 	assertErrorResponse(t, login("wrong"), http.StatusUnauthorized, "unauthorized", "invalid credentials")
-	assertErrorResponse(t, login("wrong"), http.StatusTooManyRequests, "login_locked", "login locked")
-	assertErrorResponse(t, login("secret"), http.StatusTooManyRequests, "login_locked", "login locked")
+	assertErrorResponse(t, login("wrong"), http.StatusUnauthorized, "unauthorized", "invalid credentials")
+	assertErrorResponse(t, login("secret"), http.StatusUnauthorized, "unauthorized", "invalid credentials")
+}
+
+func TestLoginLockoutFailuresHaveIdenticalResponses(t *testing.T) {
+	var baseline *httptest.ResponseRecorder
+	for _, policy := range []authcore.CapacityPolicy{authcore.AllowUntrackedKeys, authcore.RejectNewKeys} {
+		for _, state := range []string{"empty", "full", "locked"} {
+			lockout := authcore.NewMemoryLockout(authcore.MemoryLockoutOptions{
+				MaxKeys: 1, MaxFailures: 2, CapacityPolicy: policy,
+			})
+			if state != "empty" {
+				key := "unrelated"
+				if state == "locked" {
+					key = "ip:192.0.2.10"
+				}
+				for range 2 {
+					if _, _, err := lockout.RecordFailure(t.Context(), key); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			calls := 0
+			opts := testOptions(authhttp.LoginAuthenticatorFunc(func(_ context.Context, _, password string) (string, bool, error) {
+				calls++
+				return "user-1", password == "secret", nil
+			}))
+			opts.LoginLockout = lockout
+			router := mustNewTestRouter(t, issuingManager(time.Now()), opts)
+			login := func(password string) *httptest.ResponseRecorder {
+				return serve(router, http.MethodPost, "/auth/login", `{"username":"admin","password":"`+password+`","persistence":"persistent"}`, func(req *http.Request) {
+					req.Header.Set("Content-Type", "application/json")
+					req.RemoteAddr = "192.0.2.10:1234"
+				})
+			}
+			if baseline == nil {
+				baseline = login("wrong")
+			}
+			for range 3 {
+				rec := login("wrong")
+				if rec.Code != http.StatusUnauthorized || rec.Body.String() != baseline.Body.String() || !reflect.DeepEqual(rec.Header(), baseline.Header()) {
+					t.Fatalf("policy=%d state=%s leaked through response: %d %v %s", policy, state, rec.Code, rec.Header(), rec.Body.String())
+				}
+			}
+			if (state == "locked" || state == "full" && policy == authcore.RejectNewKeys) && calls != 0 {
+				t.Fatalf("policy=%d state=%s reached verification %d times", policy, state, calls)
+			}
+			rec := login("secret")
+			if state == "full" && policy == authcore.AllowUntrackedKeys {
+				if rec.Code != http.StatusOK {
+					t.Fatalf("capacity blocked valid credentials: %d %s", rec.Code, rec.Body.String())
+				}
+			} else if rec.Code != baseline.Code || rec.Body.String() != baseline.Body.String() || !reflect.DeepEqual(rec.Header(), baseline.Header()) {
+				t.Fatalf("denied valid credentials revealed state: %d %v %s", rec.Code, rec.Header(), rec.Body.String())
+			}
+		}
+	}
 }
 
 func TestRegisterRejectsNilHandler(t *testing.T) {
@@ -1013,6 +1069,65 @@ func TestLoginRateLimit(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			tc.run(t, mustNewTestRouter(t, issuingManager(time.Now().UTC()), tc.options))
+		})
+	}
+}
+
+func TestLoginClientIPHeaders(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		headers     []string
+		rateHeaders []string
+		lockout     bool
+		want        []int
+		wantCalls   int
+	}{
+		{"rate inherits", []string{"X-Real-IP"}, nil, false, []int{401, 429, 429, 401}, 2},
+		{"rate overrides", []string{"X-Real-IP"}, []string{"Forwarded"}, false, []int{401, 401, 401, 401}, 4},
+		{"rate disables", []string{"X-Real-IP"}, []string{}, false, []int{401, 429, 429, 429}, 1},
+		{"parent disables", []string{}, nil, false, []int{401, 429, 429, 429}, 1},
+		{"lockout selects", []string{"X-Real-IP"}, nil, true, []int{401, 401, 401, 401}, 3},
+		{"lockout disables", []string{}, nil, true, []int{401, 401, 401, 401}, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			opts := authhttp.Options{
+				LoginAuthenticator: authhttp.LoginAuthenticatorFunc(func(context.Context, string, string) (string, bool, error) {
+					calls++
+					return "", false, nil
+				}),
+				TrustedProxies:  []netip.Prefix{mustPrefix(t, "192.0.2.0/24")},
+				ClientIPHeaders: tc.headers,
+				RateLimit: &authhttp.RateLimitOptions{
+					Disabled: tc.lockout, Requests: 1, Window: time.Minute, IPv4PrefixBits: 32,
+					ClientIPHeaders: tc.rateHeaders,
+				},
+			}
+			if tc.lockout {
+				opts.LoginLockout = authcore.NewMemoryLockout(authcore.MemoryLockoutOptions{MaxFailures: 2})
+			}
+			router := mustNewTestRouter(t, issuingManager(time.Now().UTC()), opts)
+			if len(tc.headers) > 0 {
+				tc.headers[0] = "X-Forwarded-For"
+			}
+			if len(tc.rateHeaders) > 0 {
+				tc.rateHeaders[0] = "X-Real-IP"
+			}
+			for i, want := range tc.want {
+				rec := serve(router, http.MethodPost, "/auth/login", `{"username":"admin","password":"wrong","persistence":"persistent"}`, func(req *http.Request) {
+					req.Header.Set("Content-Type", "application/json")
+					req.RemoteAddr = "192.0.2.10:1234"
+					req.Header.Set("X-Forwarded-For", []string{"198.51.100.1", "198.51.100.2", "198.51.100.3", "198.51.100.4"}[i])
+					req.Header.Set("X-Real-IP", []string{"203.0.113.1", "203.0.113.1", "203.0.113.1", "203.0.113.2"}[i])
+					req.Header.Set("Forwarded", []string{"for=198.18.0.1", "for=198.18.0.2", "for=198.18.0.3", "for=198.18.0.4"}[i])
+				})
+				if rec.Code != want {
+					t.Fatalf("attempt %d: got %d, want %d: %s", i, rec.Code, want, rec.Body.String())
+				}
+			}
+			if calls != tc.wantCalls {
+				t.Fatalf("verified %d requests, want %d", calls, tc.wantCalls)
+			}
 		})
 	}
 }

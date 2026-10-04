@@ -27,6 +27,9 @@ var (
 	// ErrUserIDRequired reports an empty user ID.
 	// ErrUserIDRequired 表示缺少 user ID。
 	ErrUserIDRequired = errors.New("user id is required")
+	// ErrUserIDInvalid reports a user ID with surrounding whitespace.
+	// ErrUserIDInvalid 表示 user ID 含有首尾空白。
+	ErrUserIDInvalid = authcore.ErrUserIDInvalid
 	// ErrUsernameRequired reports an empty username.
 	// ErrUsernameRequired 表示缺少 username。
 	ErrUsernameRequired = errors.New("username is required")
@@ -48,6 +51,9 @@ var (
 	// ErrLoginLocked reports a locked login key.
 	// ErrLoginLocked 表示登录 key 已锁定。
 	ErrLoginLocked = authcore.ErrLoginLocked
+	// ErrLockoutCapacity reports that no new failure record can be stored.
+	// ErrLockoutCapacity 表示无法保存新的失败记录。
+	ErrLockoutCapacity = authcore.ErrLockoutCapacity
 	// ErrEventFailed reports an auth hook failure.
 	// ErrEventFailed 表示认证 hook 失败。
 	ErrEventFailed = errors.New("auth event failed")

@@ -23,3 +23,6 @@ context 会传给底层 handler，用于过滤和输出。非 nil error 以 `err
 
 `AddSource` 在文本和 JSON 输出中包含应用调用位置。
 文本格式使用 `source=file:line`，JSON 格式使用 slog 的 source 对象。
+
+文本格式会引用包含不可打印字符的消息，并转义不安全的属性键和值。
+分组名作为完整属性键的一部分编码。

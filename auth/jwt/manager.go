@@ -37,6 +37,9 @@ var (
 	// ErrUserIDRequired reports a missing user ID.
 	// ErrUserIDRequired 表示缺少 user ID。
 	ErrUserIDRequired = errors.New("user id is required")
+	// ErrUserIDInvalid reports a user ID with surrounding whitespace.
+	// ErrUserIDInvalid 表示 user ID 含有首尾空白。
+	ErrUserIDInvalid = errors.New("user id must not contain surrounding whitespace")
 	// ErrSessionIDRequired reports a missing session ID.
 	// ErrSessionIDRequired 表示缺少 session ID。
 	ErrSessionIDRequired = errors.New("session id is required")
@@ -101,7 +104,9 @@ func ClaimsFromContext(ctx context.Context) (Claims, bool) {
 }
 
 // Manager issues and validates JWTs backed by SessionStore.
+// User IDs must be non-empty and have no surrounding whitespace.
 // Manager 负责签发和校验由 SessionStore 支撑的 JWT。
+// User ID 必须非空，且不能包含首尾空白。
 type Manager struct {
 	signingKey string
 	store      authstore.SessionStore
@@ -183,9 +188,8 @@ func (m *Manager) IssueSessionTokens(ctx context.Context, userID string, opts Is
 		return "", time.Time{}, "", time.Time{}, err
 	}
 	ctx = contextutil.Require(ctx)
-	userID = strings.TrimSpace(userID)
-	if userID == "" {
-		return "", time.Time{}, "", time.Time{}, ErrUserIDRequired
+	if err := validateUserID(userID); err != nil {
+		return "", time.Time{}, "", time.Time{}, err
 	}
 	version, err := m.userVersion(ctx, userID)
 	if err != nil {
@@ -308,9 +312,8 @@ func (m *Manager) RevokeSession(ctx context.Context, userID, sessionID string) (
 		return false, err
 	}
 	ctx = contextutil.Require(ctx)
-	userID = strings.TrimSpace(userID)
-	if userID == "" {
-		return false, ErrUserIDRequired
+	if err := validateUserID(userID); err != nil {
+		return false, err
 	}
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
@@ -338,9 +341,8 @@ func (m *Manager) RevokeAllSessions(ctx context.Context, userID string) error {
 		return err
 	}
 	ctx = contextutil.Require(ctx)
-	userID = strings.TrimSpace(userID)
-	if userID == "" {
-		return ErrUserIDRequired
+	if err := validateUserID(userID); err != nil {
+		return err
 	}
 	return m.revokeAllUserSessions(ctx, userID, false)
 }
@@ -352,9 +354,8 @@ func (m *Manager) Sessions(ctx context.Context, userID string) ([]SessionInfo, e
 		return nil, err
 	}
 	ctx = contextutil.Require(ctx)
-	userID = strings.TrimSpace(userID)
-	if userID == "" {
-		return nil, ErrUserIDRequired
+	if err := validateUserID(userID); err != nil {
+		return nil, err
 	}
 	lister, ok := m.store.(authstore.SessionLister)
 	if !ok {
@@ -379,9 +380,8 @@ func (m *Manager) ClearUserSessions(ctx context.Context, userID string) error {
 		return err
 	}
 	ctx = contextutil.Require(ctx)
-	userID = strings.TrimSpace(userID)
-	if userID == "" {
-		return ErrUserIDRequired
+	if err := validateUserID(userID); err != nil {
+		return err
 	}
 	return m.revokeAllUserSessions(ctx, userID, true)
 }
@@ -432,7 +432,7 @@ func (m *Manager) validateTokenWithClaims(ctx context.Context, expectedKind, tok
 	if claims.Kind != expectedKind {
 		return Claims{}, authstore.SessionState{}, false, nil
 	}
-	if strings.TrimSpace(claims.Subject) == "" || strings.TrimSpace(claims.SessionID) == "" {
+	if strings.TrimSpace(claims.SessionID) == "" {
 		return Claims{}, authstore.SessionState{}, false, nil
 	}
 	if claims.Version < 0 {
@@ -500,10 +500,21 @@ func (m *Manager) parseToken(tokenStr string) (Claims, bool) {
 	if err != nil || token == nil || !token.Valid {
 		return Claims{}, false
 	}
-	if claims.ID == "" || claims.Subject == "" || claims.Kind == "" || claims.SessionID == "" {
+	if claims.ID == "" || validateUserID(claims.Subject) != nil || claims.Kind == "" || claims.SessionID == "" {
 		return Claims{}, false
 	}
 	return claims, true
+}
+
+func validateUserID(userID string) error {
+	trimmed := strings.TrimSpace(userID)
+	if trimmed == "" {
+		return ErrUserIDRequired
+	}
+	if trimmed != userID {
+		return ErrUserIDInvalid
+	}
+	return nil
 }
 
 func (m *Manager) userVersion(ctx context.Context, userID string) (int64, error) {

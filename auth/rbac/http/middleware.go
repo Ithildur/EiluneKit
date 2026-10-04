@@ -203,8 +203,8 @@ func writeAuthFailure(w http.ResponseWriter, err error) {
 	switch {
 	case err == nil:
 		response.WriteJSONError(w, http.StatusInternalServerError, "auth_error", "auth failed")
-	case errors.Is(err, corerbac.ErrLoginLocked):
-		response.WriteJSONError(w, http.StatusTooManyRequests, "login_locked", "login locked")
+	case errors.Is(err, corerbac.ErrLoginLocked), errors.Is(err, corerbac.ErrLockoutCapacity):
+		response.WriteJSONError(w, http.StatusUnauthorized, "unauthorized", "invalid credentials")
 	case errors.Is(err, authjwt.ErrStoreUnavailable):
 		response.WriteJSONError(w, http.StatusServiceUnavailable, "auth_unavailable", "auth is unavailable")
 	case errors.Is(err, authjwt.ErrUnauthorized):

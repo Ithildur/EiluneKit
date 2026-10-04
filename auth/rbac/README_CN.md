@@ -7,6 +7,7 @@
 ## 推荐组合
 
 - `UserStore`：从应用数据库按 ID 和 username 加载用户。
+- `User.ID` 必须非空且不含首尾空白。认证严格保留原 ID，并拒绝不符合约束的 ID，不会自动规范化。
 - `PasswordVerifier`：用应用保存的密码 hash 校验提交的密码。
 - `auth/jwt.Manager`：签发并校验由 session 状态支撑的 access/refresh token。
 - `auth/store/redissession`：多实例部署使用的共享 Redis session 存储。
@@ -41,6 +42,10 @@ if err != nil {
 多实例部署时，用 Redis 或数据库支撑的实现替换默认内存 `Lockout`，让登录失败次数在进程间保持一致。多个进程都接受 API token 时，`APITokenStore` 也应使用共享存储。
 
 直接调用 `Service.Login` 时必须提供非空 `LoginRequest.LockoutKey`。HTTP handler 会从客户端 IP 和 username hash 推导。
+
+`MemoryLockoutOptions.CapacityPolicy` 默认为 `AllowUntrackedKeys`，在失败记录表满时仍允许未知 key 验密。`RejectNewKeys` 在容量满时拒绝未知 key。两者均保留所有未过期记录；清理过期记录后仍无法腾出空间时，`RecordFailure` 返回 `ErrLockoutCapacity`。已有 key 正常更新，登录成功后清除对应 key。无效策略值会在构造时 panic。
+
+直接调用方必须提供独立请求限流，且不应在公开凭据错误响应中暴露 `ErrLockoutCapacity` 或 `ErrLoginLocked`。HTTP 适配层已提供这两项行为。存储与事件 hook 错误仍作为错误处理；容量拒绝也会触发登录失败事件。
 
 ## Principal
 

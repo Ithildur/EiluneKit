@@ -72,6 +72,8 @@ handler 因 panic 退出时也会记录访问日志，包括 `http.ErrAbortHandl
 
 ## 其他中间件
 
+客户端 IP 提取仅接受已配置可信代理发送的转发头。`AccessLogOptions.ClientIP.Headers` 和 `RateLimitKeyOptions.Headers` 按优先级选择接受的头。Nil 依次使用 `X-Forwarded-For`、`X-Real-IP`、`Forwarded`、`True-Client-IP`、`CF-Connecting-IP`；`[]string{}` 禁用这些头。非空列表替换默认值，不会回退到未列出的头。头名称不区分大小写；除 `Forwarded` 和 `X-Forwarded-For` 外的头按单个 IP 解析。日志和限流 key 应使用相同配置，且仅接受代理清理或设置的头。这些构造函数会复制代理和头配置切片。
+
 - `LimitBody(maxBytes)` 在上限为正数时使用 `http.MaxBytesReader` 包装请求体，不预读，也不自动返回 413；错误由读取请求体的代码处理。
 - `RequireJSONBody` 要求非空请求体使用 `application/json`。接受合法的媒体类型参数和空白；参数格式错误时返回 415。放在解码 JSON 的端点上。
 - `RateLimit(RateLimitOptions{...})` 接受应用提供的 key 函数和 `OnLimit` 响应回调；IP key 支持配置可信代理。

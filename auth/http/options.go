@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strings"
 
 	authcore "github.com/Ithildur/EiluneKit/auth"
@@ -45,6 +46,11 @@ type Options struct {
 	// TrustedProxies enables forwarded-header trust.
 	// TrustedProxies 启用转发头信任。
 	TrustedProxies []netip.Prefix
+	// ClientIPHeaders overrides clientip.Options.Headers for lockout and inherited rate-limit settings.
+	// Nil uses the default order; an empty non-nil slice disables client IP headers.
+	// ClientIPHeaders 覆盖锁定和继承的限流配置所用的 clientip.Options.Headers。
+	// Nil 使用默认顺序；非 nil 空切片禁用客户端 IP 头。
+	ClientIPHeaders []string
 
 	// MaxBodyBytes limits the login body size.
 	// MaxBodyBytes 限制登录请求体大小。
@@ -113,6 +119,9 @@ func applyOptions(base, override Options) Options {
 	if len(override.TrustedProxies) > 0 {
 		base.TrustedProxies = append([]netip.Prefix(nil), override.TrustedProxies...)
 	}
+	if override.ClientIPHeaders != nil {
+		base.ClientIPHeaders = slices.Clone(override.ClientIPHeaders)
+	}
 	if override.MaxBodyBytes > 0 {
 		base.MaxBodyBytes = override.MaxBodyBytes
 	}
@@ -162,6 +171,9 @@ func mergeRateLimitOptions(base *RateLimitOptions, override *RateLimitOptions) *
 	}
 	if len(override.TrustedProxies) > 0 {
 		merged.TrustedProxies = append([]netip.Prefix(nil), override.TrustedProxies...)
+	}
+	if override.ClientIPHeaders != nil {
+		merged.ClientIPHeaders = slices.Clone(override.ClientIPHeaders)
 	}
 	if override.KeyFunc != nil {
 		merged.KeyFunc = override.KeyFunc

@@ -23,3 +23,6 @@ error is appended as the `error` attribute. `With` keeps its own attribute slice
 
 `AddSource` includes the application call site in both text and JSON output.
 Text output uses `source=file:line`; JSON output uses slog's source object.
+
+Text output quotes messages containing non-printable characters and escapes unsafe
+attribute keys and values. Group names are encoded as part of the complete key.

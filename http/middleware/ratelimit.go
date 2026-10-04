@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/netip"
+	"slices"
 	"time"
 
 	"github.com/Ithildur/EiluneKit/clientip"
@@ -29,6 +30,9 @@ type RateLimitOptions struct {
 // RateLimitKeyOptions 配置 RateLimitKeyByIP。
 type RateLimitKeyOptions struct {
 	TrustedProxies []netip.Prefix
+	// Headers overrides clientip.Options.Headers; nil uses its default order.
+	// Headers 覆盖 clientip.Options.Headers；nil 使用默认顺序。
+	Headers []string
 }
 
 // RateLimit returns a rate-limit middleware.
@@ -72,6 +76,7 @@ func RateLimitKeyByIP(ipv4PrefixBits, ipv6PrefixBits int, opts RateLimitKeyOptio
 	v6 := normalizeRateLimitPrefixBits(ipv6PrefixBits, 128)
 	clientIPOpts := clientip.Options{
 		TrustedProxies: append([]netip.Prefix(nil), opts.TrustedProxies...),
+		Headers:        slices.Clone(opts.Headers),
 	}
 
 	return func(r *http.Request) (string, error) {

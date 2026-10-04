@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"maps"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +30,22 @@ var (
 	// ErrLoginLocked reports a locked login key.
 	// ErrLoginLocked 表示登录 key 已锁定。
 	ErrLoginLocked = errors.New("login locked")
+	// ErrLockoutCapacity reports that no new failure record can be stored.
+	// ErrLockoutCapacity 表示无法保存新的失败记录。
+	ErrLockoutCapacity = errors.New("login lockout capacity exhausted")
+)
+
+// CapacityPolicy controls checks for unknown keys when the lockout table is full.
+// CapacityPolicy 控制锁定表满时如何检查未知 key。
+type CapacityPolicy uint8
+
+const (
+	// AllowUntrackedKeys permits checks even when new failures cannot be recorded.
+	// AllowUntrackedKeys 在无法记录新失败时仍允许检查通过。
+	AllowUntrackedKeys CapacityPolicy = iota
+	// RejectNewKeys rejects checks for unknown keys when no capacity is available.
+	// RejectNewKeys 在没有容量时拒绝检查未知 key。
+	RejectNewKeys
 )
 
 // LockedError carries the lockout expiration for ErrLoginLocked.
@@ -66,7 +83,10 @@ type MemoryLockoutOptions struct {
 	Window      time.Duration
 	Lockout     time.Duration
 	MaxKeys     int
-	Now         func() time.Time
+	// CapacityPolicy defaults to AllowUntrackedKeys. Unexpired records are never evicted.
+	// CapacityPolicy 默认使用 AllowUntrackedKeys。未过期记录不会被淘汰。
+	CapacityPolicy CapacityPolicy
+	Now            func() time.Time
 }
 
 // MemoryLockout tracks login failures in memory.
@@ -86,12 +106,16 @@ type lockoutItem struct {
 	failures int
 	first    time.Time
 	locked   time.Time
-	updated  time.Time
 }
 
 // NewMemoryLockout returns an in-memory Lockout.
+// An unsupported CapacityPolicy panics.
 // NewMemoryLockout 返回内存版 Lockout。
+// 不支持的 CapacityPolicy 会引发 panic。
 func NewMemoryLockout(opts MemoryLockoutOptions) *MemoryLockout {
+	if opts.CapacityPolicy != AllowUntrackedKeys && opts.CapacityPolicy != RejectNewKeys {
+		panic("auth: invalid lockout capacity policy")
+	}
 	if opts.MaxFailures <= 0 {
 		opts.MaxFailures = defaultLockoutFailures
 	}
@@ -117,8 +141,10 @@ func NewMemoryLockout(opts MemoryLockoutOptions) *MemoryLockout {
 
 // Check reports whether key is currently locked.
 // Empty key returns ErrLockoutKeyRequired.
+// RejectNewKeys returns ErrLockoutCapacity for unknown keys when full.
 // Check 返回 key 当前是否已锁定。
 // 空 key 返回 ErrLockoutKeyRequired。
+// RejectNewKeys 在容量满时对未知 key 返回 ErrLockoutCapacity。
 func (l *MemoryLockout) Check(ctx context.Context, key string) (time.Time, bool, error) {
 	contextutil.Require(ctx)
 	if l == nil {
@@ -132,18 +158,14 @@ func (l *MemoryLockout) Check(ctx context.Context, key string) (time.Time, bool,
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	item, ok := l.items[key]
-	if !ok {
-		return time.Time{}, false, nil
-	}
-	if !item.locked.IsZero() {
-		if item.locked.After(now) {
-			return item.locked, true, nil
+	if ok {
+		if !l.expired(item, now) {
+			return item.locked, item.locked.After(now), nil
 		}
 		delete(l.items, key)
-		return time.Time{}, false, nil
 	}
-	if now.Sub(item.first) > l.opts.Window {
-		delete(l.items, key)
+	if l.opts.CapacityPolicy == RejectNewKeys && !l.hasCapacity(now) {
+		return time.Time{}, false, ErrLockoutCapacity
 	}
 	return time.Time{}, false, nil
 }
@@ -151,9 +173,11 @@ func (l *MemoryLockout) Check(ctx context.Context, key string) (time.Time, bool,
 // RecordFailure records a failed attempt and reports whether it locked key.
 // An active lock keeps its original expiration regardless of the failure window.
 // Empty key returns ErrLockoutKeyRequired.
+// Both capacity policies return ErrLockoutCapacity when a new record cannot fit after expiration cleanup.
 // RecordFailure 记录一次失败尝试并返回 key 是否被锁定。
 // 已生效的锁定保持原过期时间，不受失败统计窗口影响。
 // 空 key 返回 ErrLockoutKeyRequired。
+// 两种容量策略均在清理过期记录后仍无法保存新记录时返回 ErrLockoutCapacity。
 func (l *MemoryLockout) RecordFailure(ctx context.Context, key string) (time.Time, bool, error) {
 	contextutil.Require(ctx)
 	if l == nil {
@@ -166,16 +190,17 @@ func (l *MemoryLockout) RecordFailure(ctx context.Context, key string) (time.Tim
 	now := l.now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	item := l.items[key]
+	item, exists := l.items[key]
 	if item.locked.After(now) {
 		return item.locked, true, nil
 	}
-	l.ensureCapacity(now, key)
-	if item.first.IsZero() || now.Sub(item.first) > l.opts.Window || (!item.locked.IsZero() && !item.locked.After(now)) {
+	if !exists && !l.hasCapacity(now) {
+		return time.Time{}, false, ErrLockoutCapacity
+	}
+	if !exists || l.expired(item, now) {
 		item = lockoutItem{first: now}
 	}
 	item.failures++
-	item.updated = now
 	if item.failures >= l.opts.MaxFailures {
 		item.locked = now.Add(l.opts.Lockout)
 	}
@@ -211,33 +236,19 @@ func memoryLockoutKey(key string) (string, error) {
 	return "sha256:" + hex.EncodeToString(sum[:]), nil
 }
 
-func (l *MemoryLockout) ensureCapacity(now time.Time, keep string) {
+func (l *MemoryLockout) hasCapacity(now time.Time) bool {
 	if len(l.items) < l.opts.MaxKeys {
-		return
+		return true
 	}
-	for key, item := range l.items {
-		if key == keep {
-			continue
-		}
-		if (!item.locked.IsZero() && !item.locked.After(now)) || (item.locked.IsZero() && now.Sub(item.first) > l.opts.Window) {
-			delete(l.items, key)
-		}
+	maps.DeleteFunc(l.items, func(_ string, item lockoutItem) bool {
+		return l.expired(item, now)
+	})
+	return len(l.items) < l.opts.MaxKeys
+}
+
+func (l *MemoryLockout) expired(item lockoutItem, now time.Time) bool {
+	if !item.locked.IsZero() {
+		return !item.locked.After(now)
 	}
-	if len(l.items) < l.opts.MaxKeys {
-		return
-	}
-	var oldestKey string
-	var oldest time.Time
-	for key, item := range l.items {
-		if key == keep {
-			continue
-		}
-		if oldestKey == "" || item.updated.Before(oldest) {
-			oldestKey = key
-			oldest = item.updated
-		}
-	}
-	if oldestKey != "" {
-		delete(l.items, oldestKey)
-	}
+	return now.Sub(item.first) > l.opts.Window
 }

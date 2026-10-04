@@ -72,6 +72,8 @@ Compression respects gzip negotiation, skips HEAD, already encoded responses, an
 
 ## Other middleware
 
+Client IP extraction accepts forwarded headers only from configured trusted proxies. `AccessLogOptions.ClientIP.Headers` and `RateLimitKeyOptions.Headers` select accepted headers in priority order. Nil uses `X-Forwarded-For`, `X-Real-IP`, `Forwarded`, `True-Client-IP`, then `CF-Connecting-IP`; `[]string{}` disables them. A non-empty list replaces the defaults, with no fallback to unlisted headers. Header names are case-insensitive; names other than `Forwarded` and `X-Forwarded-For` carry a single IP. Use the same selection for logs and rate-limit keys, and only accept headers your proxy sanitizes or sets. These constructors copy the proxy and header slices.
+
 - `LimitBody(maxBytes)` wraps the body with `http.MaxBytesReader` when the limit is positive. It does not pre-read or automatically return 413; the body consumer handles the error.
 - `RequireJSONBody` requires `application/json` for a nonempty body. Valid media-type parameters and whitespace are accepted; malformed parameters receive 415. Attach it to endpoints that decode JSON.
 - `RateLimit(RateLimitOptions{...})` accepts an application key function and `OnLimit` response callback. IP keys can use configured trusted proxies.

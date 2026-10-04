@@ -54,5 +54,6 @@ Use `errors.Is` with `migration.ErrSchemaAhead`, `migration.ErrSchemaBehind`, an
 - `pgx.NewPool` creates a pool with on-demand connections; call `pgx.Ping` when startup must verify connectivity. `Config.ConnectTimeout` limits each connection attempt and defaults to five seconds when non-positive.
 - `gorm.Connect` verifies the connection with the caller's context, using a five-second timeout when it has no deadline, and closes the SQL pool if verification fails. On success, the caller owns the pool and must close it.
 - `gorm.NewLogger` hides SQL query parameter values by default; set `LogOptions.IncludeQueryParams` only for controlled debugging
+- `gorm.Connect` uses GORM's default logger with SQL parameter values hidden, including in `db.Debug()` mode. An explicit `Config.Logger` controls its own parameter policy. SQL literals and database error messages are not redacted.
 - `migration` expects an explicit non-nil `context.Context`; the application command remains responsible for configuration, connection setup, output, and exit status
 - `dbtypes` keeps driver-specific aliases out of application model packages

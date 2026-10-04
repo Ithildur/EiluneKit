@@ -18,8 +18,8 @@ func writeAuthFailure(w stdhttp.ResponseWriter, err error) {
 	switch {
 	case err == nil:
 		response.WriteJSONError(w, stdhttp.StatusInternalServerError, errAuthErrorCode, errAuthErrorMessage)
-	case errors.Is(err, authcore.ErrLoginLocked):
-		response.WriteJSONError(w, stdhttp.StatusTooManyRequests, "login_locked", "login locked")
+	case errors.Is(err, authcore.ErrLoginLocked), errors.Is(err, authcore.ErrLockoutCapacity):
+		response.WriteJSONError(w, stdhttp.StatusUnauthorized, "unauthorized", "invalid credentials")
 	case errors.Is(err, authjwt.ErrStoreUnavailable):
 		response.WriteJSONError(w, stdhttp.StatusServiceUnavailable, "auth_unavailable", "auth is unavailable")
 	case errors.Is(err, authjwt.ErrUnauthorized):

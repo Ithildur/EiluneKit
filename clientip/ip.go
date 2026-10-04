@@ -14,6 +14,13 @@ import (
 // Options 配置转发头信任边界。
 type Options struct {
 	TrustedProxies []netip.Prefix
+	// Headers lists accepted client IP headers in priority order.
+	// Nil uses X-Forwarded-For, X-Real-IP, Forwarded, True-Client-IP, then CF-Connecting-IP.
+	// An empty non-nil slice disables forwarded headers. Other names accept a single IP.
+	// Headers 按优先级列出接受的客户端 IP 头。
+	// Nil 依次使用 X-Forwarded-For、X-Real-IP、Forwarded、True-Client-IP、CF-Connecting-IP。
+	// 非 nil 空切片禁用转发头。其他头名称按单个 IP 解析。
+	Headers []string
 }
 
 // FromRemote parses an IP from remoteAddr.
@@ -49,12 +56,12 @@ func FromRequest(r *http.Request, opts Options) (netip.Addr, bool) {
 		return netip.Addr{}, false
 	}
 	if len(opts.TrustedProxies) > 0 {
-		return fromTrustedRequest(r, opts.TrustedProxies)
+		return fromTrustedRequest(r, opts)
 	}
 	return FromRemote(r.RemoteAddr)
 }
 
-func fromTrustedRequest(r *http.Request, trusted []netip.Prefix) (netip.Addr, bool) {
+func fromTrustedRequest(r *http.Request, opts Options) (netip.Addr, bool) {
 	if r == nil {
 		return netip.Addr{}, false
 	}
@@ -62,17 +69,17 @@ func fromTrustedRequest(r *http.Request, trusted []netip.Prefix) (netip.Addr, bo
 	if !ok {
 		return netip.Addr{}, false
 	}
-	if len(trusted) == 0 || !isTrustedIP(remote, trusted) {
+	if len(opts.TrustedProxies) == 0 || !isTrustedIP(remote, opts.TrustedProxies) {
 		return remote, true
 	}
 
-	candidates := forwardedCandidates(r)
+	candidates := forwardedCandidates(r, opts.Headers)
 	if len(candidates) == 0 {
 		return remote, true
 	}
 
 	for _, ip := range slices.Backward(candidates) {
-		if !isTrustedIP(ip, trusted) {
+		if !isTrustedIP(ip, opts.TrustedProxies) {
 			return ip, true
 		}
 	}
@@ -80,24 +87,28 @@ func fromTrustedRequest(r *http.Request, trusted []netip.Prefix) (netip.Addr, bo
 	return remote, true
 }
 
-func forwardedCandidates(r *http.Request) []netip.Addr {
+func forwardedCandidates(r *http.Request, headers []string) []netip.Addr {
 	if r == nil {
 		return nil
 	}
-	if ips := parseForwardedForList(r.Header.Get("Forwarded")); len(ips) > 0 {
-		return ips
+	if headers == nil {
+		headers = []string{"X-Forwarded-For", "X-Real-IP", "Forwarded", "True-Client-IP", "CF-Connecting-IP"}
 	}
-	if ips := parseXForwardedForList(r.Header.Get("X-Forwarded-For")); len(ips) > 0 {
-		return ips
-	}
-	if ip, ok := parseSingleIPHeader(r.Header.Get("True-Client-IP")); ok {
-		return []netip.Addr{ip}
-	}
-	if ip, ok := parseSingleIPHeader(r.Header.Get("CF-Connecting-IP")); ok {
-		return []netip.Addr{ip}
-	}
-	if ip, ok := parseSingleIPHeader(r.Header.Get("X-Real-IP")); ok {
-		return []netip.Addr{ip}
+	for _, name := range headers {
+		var ips []netip.Addr
+		switch http.CanonicalHeaderKey(name) {
+		case "Forwarded":
+			ips = parseForwardedForList(r.Header.Get(name))
+		case "X-Forwarded-For":
+			ips = parseXForwardedForList(r.Header.Get(name))
+		default:
+			if ip, ok := parseSingleIPHeader(r.Header.Get(name)); ok {
+				ips = []netip.Addr{ip}
+			}
+		}
+		if len(ips) > 0 {
+			return ips
+		}
 	}
 	return nil
 }

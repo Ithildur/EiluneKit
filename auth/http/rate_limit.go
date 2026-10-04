@@ -24,7 +24,12 @@ type RateLimitOptions struct {
 	IPv4PrefixBits int
 	IPv6PrefixBits int
 	TrustedProxies []netip.Prefix
-	KeyFunc        httprate.KeyFunc
+	// ClientIPHeaders overrides clientip.Options.Headers; nil inherits the handler's setting.
+	// Standalone LoginRateLimit uses the default order for nil.
+	// ClientIPHeaders 覆盖 clientip.Options.Headers；nil 继承 handler 配置。
+	// 单独调用 LoginRateLimit 时，nil 使用默认顺序。
+	ClientIPHeaders []string
+	KeyFunc         httprate.KeyFunc
 }
 
 // DefaultRateLimitOptions returns the default login rate limit options.
@@ -69,6 +74,7 @@ func LoginRateLimit(opts *RateLimitOptions) func(stdhttp.Handler) stdhttp.Handle
 			effective.IPv6PrefixBits,
 			middleware.RateLimitKeyOptions{
 				TrustedProxies: append([]netip.Prefix(nil), effective.TrustedProxies...),
+				Headers:        effective.ClientIPHeaders,
 			},
 		)
 	}

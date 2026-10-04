@@ -139,14 +139,17 @@ spec, err := openapi.Generate(routeList, openapi.Options{
 - `RefreshCookieName`、`CSRFCookieName`、`CSRFHeaderName`：cookie 与 header 名称
 - `CookieSameSite`：可选的认证 cookie `SameSite` 覆盖项；零值保持基于 TLS / 代理推导的自动行为
 - `TrustedProxies`：登录限流和安全 cookie 协议判断使用的转发代理信任边界
+- `ClientIPHeaders`：登录锁定和限流接受的客户端 IP 头，按优先级排列。Nil 依次使用 `X-Forwarded-For`、`X-Real-IP`、`Forwarded`、`True-Client-IP`、`CF-Connecting-IP`；`[]string{}` 禁用这些头。非空列表替换默认值，例如 `[]string{"X-Forwarded-For"}`。非 nil 的 `RateLimit.ClientIPHeaders` 覆盖此配置。Cookie 协议判断独立处理。
 - `MaxBodyBytes`：认证端点请求体大小限制
 - `RateLimit`：登录限流配置
-- `LoginLockout`：可选的登录失败锁定。凭据失败时记录 lockout key；达到阈值后返回 `429 login_locked`；登录成功后清除该 key。
+- `LoginLockout`：可选的登录失败锁定。凭据失败时记录 lockout key，达到阈值后拒绝该 key；登录成功后清除该 key。凭据错误、锁定和容量拒绝均返回 `401 unauthorized`，消息为 `invalid credentials`；独立请求限流返回 429。
 - `LoginLockoutKeyFunc`：可选的 `LoginLockout` key 函数；默认 key 使用精确客户端 IP。设置 `LoginLockout` 时，key 不能为空。只有 `LoginAuthenticator` 确实使用 username 时，才把 username 纳入 key。
 - `Events`：认证生命周期 hook。`Events.Login` 在凭据通过且 token 已签发后、cookie 和响应体写出前执行；返回错误会尝试吊销新的 refresh session 并让登录请求失败。hook 可能并发调用。
 - `Logger`：可选 `*slog.Logger`，用于记录认证生命周期 hook 失败和补偿吊销失败。
 
 只有设置 `TrustedProxies` 才信任转发头。默认限流 key 使用 `RemoteAddr`。
+
+仅接受可信代理清理或设置的头。头的优先级不能证明内容可信。配置切片在构造 handler 时复制。
 
 单进程部署可以使用 `auth.NewMemoryLockout`：
 
@@ -163,12 +166,16 @@ authHandler, err := authhttp.NewHandler(manager, authhttp.Options{
 
 多实例部署应传入 Redis 或 SQL 支撑的 `auth.Lockout`，让登录失败状态在进程间共享。
 
+`MemoryLockoutOptions.CapacityPolicy` 默认为 `auth.AllowUntrackedKeys`：表满时仍允许未知 key 验证凭据，但新增失败记录会在内部返回 `auth.ErrLockoutCapacity`。`auth.RejectNewKeys` 在表满时于验密前拒绝未知 key。两种策略都只删除过期记录。应保持独立登录限流，尤其是在使用 `AllowUntrackedKeys` 时。不支持的策略会在构造时 panic。
+
+登录失败响应不暴露锁定或容量详情。这不保证耗时或成功登录行为不可区分：`RejectNewKeys` 可能在验密前拒绝正确凭据。其他后端错误保持正常处理。
+
 默认情况下，cookie 的 `Secure` 和 `SameSite` 会从请求推导：TLS 总是启用 secure cookie；只有可信代理发来的 `X-Forwarded-Proto: https` 才参与判断。部署策略需要固定模式时设置 `CookieSameSite`，例如同站应用使用 `http.SameSiteLaxMode`，跨站 SPA 使用 `http.SameSiteNoneMode`。
 
 ## 契约
 
 - `NewHandler` 需要 `TokenManager` 和 `Options.LoginAuthenticator`
 - `NewHandler` 接收一个 `Options` 结构体；除 `LoginAuthenticator` 外，其他字段为零值时都会回退到默认配置
-- `NewStaticPassword` 需要非空 user ID 和 password
+- `NewStaticPassword` 需要非空且不含首尾空白的 user ID，以及非空 password。自定义登录校验器返回的 ID 也必须满足相同约束。
 - `VerifyCredential` 使用精确字节比较，适合比较预先 hash 后或应用自行派生的凭据
 - 应用需要多用户、角色或 scope 时，使用 `auth/rbac` 和 `auth/rbac/http`

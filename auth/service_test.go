@@ -8,7 +8,36 @@ import (
 
 	authcore "github.com/Ithildur/EiluneKit/auth"
 	authjwt "github.com/Ithildur/EiluneKit/auth/jwt"
+	authstore "github.com/Ithildur/EiluneKit/auth/store"
 )
+
+func TestLoginRejectsNoncanonicalUserID(t *testing.T) {
+	manager, err := authjwt.New("0123456789abcdef0123456789abcdef", authstore.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{" user-1", "user-1\t", "\u00a0user-1\u00a0"} {
+		t.Run(id, func(t *testing.T) {
+			if _, err := authcore.NewStaticPassword(id, "secret"); !errors.Is(err, authcore.ErrUserIDInvalid) {
+				t.Fatalf("static password accepted noncanonical ID: %v", err)
+			}
+			service, err := authcore.New(manager, authcore.LoginAuthenticatorFunc(func(context.Context, string, string) (string, bool, error) {
+				return id, true, nil
+			}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			tokens, ok, err := service.Login(t.Context(), "alice", "secret", authcore.IssueOptions{})
+			if !errors.Is(err, authcore.ErrUserIDInvalid) || ok || tokens.Access != "" || tokens.Refresh != "" {
+				t.Fatalf("login accepted noncanonical ID: ok=%v err=%v", ok, err)
+			}
+		})
+	}
+	sessions, err := manager.Sessions(t.Context(), "user-1")
+	if err != nil || len(sessions) != 0 {
+		t.Fatalf("rejected logins created sessions for another ID: count=%d err=%v", len(sessions), err)
+	}
+}
 
 type serviceTokenManager struct {
 	revokeAllUserID string

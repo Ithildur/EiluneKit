@@ -121,6 +121,25 @@ func TestAuthenticateBearerLoadsCurrentUserState(t *testing.T) {
 	}
 }
 
+func TestLoginRejectsUserIDAlias(t *testing.T) {
+	users := newUserStore(
+		rbac.User{ID: "user-1", Username: "alice", Role: "admin"},
+		rbac.User{ID: " user-1 ", Username: "mallory", Role: "viewer"},
+	)
+	service := newTestService(t, users, rbac.ServiceOptions{})
+	tokens, ok, err := service.Login(t.Context(), rbac.LoginRequest{
+		Username: "mallory", Password: "secret", LockoutKey: "mallory",
+	})
+	if !errors.Is(err, rbac.ErrUserIDInvalid) || ok || tokens.AccessToken != "" || tokens.RefreshToken != "" {
+		t.Fatalf("login issued another user's identity: ok=%v err=%v", ok, err)
+	}
+	access := loginAccessToken(t, service)
+	principal, ok, err := service.AuthenticateBearer(t.Context(), access)
+	if err != nil || !ok || principal.Subject != "user-1" || principal.Role != "admin" {
+		t.Fatalf("canonical account failed authentication: principal=%+v ok=%v err=%v", principal, ok, err)
+	}
+}
+
 func TestAuthenticateBearerRejectsBumpedSessionVersion(t *testing.T) {
 	users := newUserStore(rbac.User{ID: "user-1", Username: "alice", Role: "admin"})
 	store := authstore.NewMemoryStore()

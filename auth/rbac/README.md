@@ -7,6 +7,7 @@ It deliberately does not own user CRUD, password hashing policy, registration, i
 ## Recommended Stack
 
 - `UserStore`: load users by ID and username from the application database.
+- `User.ID` must be non-empty and have no surrounding whitespace. Authentication preserves the ID exactly and rejects invalid IDs instead of normalizing them.
 - `PasswordVerifier`: verify the submitted password against the application's stored password hash.
 - `auth/jwt.Manager`: issue and validate access/refresh tokens backed by session state.
 - `auth/store/redissession`: shared Redis session storage for multi-instance deployments.
@@ -41,6 +42,10 @@ if err != nil {
 For multi-instance deployments, replace the default in-memory `Lockout` with a Redis or database-backed implementation so login failures are consistent across processes. `APITokenStore` should also be shared when API tokens are accepted by more than one process.
 
 Direct `Service.Login` callers must provide a non-empty `LoginRequest.LockoutKey`. The HTTP handler derives it from the client IP and a username hash.
+
+`MemoryLockoutOptions.CapacityPolicy` defaults to `AllowUntrackedKeys`, which allows verification of unknown keys even when failure storage is full. `RejectNewKeys` rejects unknown keys at capacity. Both retain all unexpired records; `RecordFailure` reports `ErrLockoutCapacity` if expiration cleanup cannot free space. Existing keys continue to update normally, and successful login clears its key. Invalid policy values panic at construction.
+
+Direct callers must apply independent request rate limits and avoid exposing `ErrLockoutCapacity` or `ErrLoginLocked` in public credential-error responses. The HTTP adapter provides both behaviors. Storage and event-hook errors remain errors; capacity rejection still emits a login-failure event.
 
 ## Principals
 

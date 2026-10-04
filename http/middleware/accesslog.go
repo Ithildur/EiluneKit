@@ -3,6 +3,7 @@ package middleware
 import (
 	"log/slog"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/Ithildur/EiluneKit/clientip"
@@ -32,6 +33,8 @@ func AccessLog(opts AccessLogOptions) func(http.Handler) http.Handler {
 	if opts.Disabled || opts.Logger == nil {
 		return func(next http.Handler) http.Handler { return next }
 	}
+	opts.ClientIP.TrustedProxies = slices.Clone(opts.ClientIP.TrustedProxies)
+	opts.ClientIP.Headers = slices.Clone(opts.ClientIP.Headers)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()

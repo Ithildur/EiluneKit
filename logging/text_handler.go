@@ -51,7 +51,7 @@ func (h *textHandler) Handle(_ context.Context, r slog.Record) error {
 	line.WriteString(" [")
 	line.WriteString(strings.ToUpper(r.Level.String()))
 	line.WriteString("] ")
-	line.WriteString(r.Message)
+	line.WriteString(formatMessage(r.Message))
 
 	if h.addSource {
 		if source := r.Source(); source != nil {
@@ -116,7 +116,7 @@ func (h *textHandler) appendAttr(line *strings.Builder, prefix string, a slog.At
 	}
 	key := prefix + a.Key
 	line.WriteByte(' ')
-	line.WriteString(key)
+	line.WriteString(formatString(key))
 	line.WriteByte('=')
 	line.WriteString(formatValue(a.Value, h.timeFormat))
 }
@@ -124,11 +124,11 @@ func (h *textHandler) appendAttr(line *strings.Builder, prefix string, a slog.At
 func formatValue(v slog.Value, timeFormat string) string {
 	switch v.Kind() {
 	case slog.KindString:
-		return formatValueString(v.String())
+		return formatString(v.String())
 	case slog.KindTime:
-		return formatValueString(v.Time().Local().Format(timeFormat))
+		return formatString(v.Time().Local().Format(timeFormat))
 	case slog.KindDuration:
-		return formatValueString(v.Duration().String())
+		return formatString(v.Duration().String())
 	case slog.KindBool:
 		return strconv.FormatBool(v.Bool())
 	case slog.KindInt64:
@@ -139,14 +139,14 @@ func formatValue(v slog.Value, timeFormat string) string {
 		return strconv.FormatFloat(v.Float64(), 'f', -1, 64)
 	case slog.KindAny:
 		if err, ok := v.Any().(error); ok {
-			return formatValueString(err.Error())
+			return formatString(err.Error())
 		}
 		if v.Any() == nil {
 			return "null"
 		}
-		return formatValueString(fmt.Sprint(v.Any()))
+		return formatString(fmt.Sprint(v.Any()))
 	default:
-		return formatValueString(fmt.Sprint(v.Any()))
+		return formatString(fmt.Sprint(v.Any()))
 	}
 }
 
@@ -155,16 +155,25 @@ func needsQuoting(s string) bool {
 		return true
 	}
 	for _, r := range s {
-		if r <= ' ' || r == '=' || r == '"' {
+		if r <= ' ' || r == '=' || r == '"' || !strconv.IsPrint(r) {
 			return true
 		}
 	}
 	return false
 }
 
-func formatValueString(s string) string {
+func formatString(s string) string {
 	if needsQuoting(s) {
 		return strconv.Quote(s)
+	}
+	return s
+}
+
+func formatMessage(s string) string {
+	for _, r := range s {
+		if !strconv.IsPrint(r) {
+			return strconv.Quote(s)
+		}
 	}
 	return s
 }
