@@ -1,10 +1,10 @@
 # Changelog
 
-## Unreleased
+## v0.4.4 - 2026-10-05
 
 ### Breaking
 
-- Built-in memory and Redis session stores now default to 255 unexpired sessions per user. New sessions at capacity return `ErrSessionLimitReached`; auth HTTP login exposes the same `401 unauthorized` / `invalid credentials` response as other credential rejections. Existing sessions are preserved and can refresh or be revoked. To disable the limit in application code, use `store.NewMemoryStoreWithLimit(0)` or `redissession.NewWithLimit(client, opts, 0)`. Positive limits set the maximum; negative values panic at construction. Redis writers sharing a namespace must use the same policy; older or unlimited writers can bypass it during a mixed rollout. Existing users above the limit cannot add sessions until their count falls below it. Redis keys and stored formats are unchanged; custom `SessionStore` implementations retain ownership of their capacity policy.
+- Built-in memory and Redis session stores now default to 255 unexpired sessions per user. New sessions at capacity return `store.ErrSessionLimitReached`; both auth HTTP adapters expose the normal `401 unauthorized` / `invalid credentials` response. Existing sessions remain usable, including for users already above the limit. To retain unlimited sessions, use `store.NewMemoryStoreWithLimit(0)` or `redissession.NewWithLimit(client, opts, 0)`. Redis writers sharing a namespace must use the same policy; older or unlimited writers can bypass it during a mixed rollout. Stored formats are unchanged; custom `SessionStore` implementations retain their own capacity policy.
 - Both auth HTTP adapters return `401 unauthorized` / `invalid credentials` for locked logins instead of `429 login_locked`. Capacity rejection uses the same response; independent request rate limits still return 429.
 - RBAC HTTP login now defaults to five requests per minute per client IP prefix (IPv4 /24, IPv6 /40). Configure `Options.RateLimit` to adjust it, or set `Disabled` when the application provides its own limiter.
 - `MemoryLockout.RecordFailure` returns `ErrLockoutCapacity` when a new record cannot fit after expiration cleanup. Existing unexpired records are no longer evicted. Direct callers must handle the capacity error; HTTP adapters conceal it as a normal credential rejection.
@@ -12,8 +12,13 @@
 
 ### Added
 
+- `store.NewMemoryStoreWithLimit` and `redissession.NewWithLimit` accept a per-user session limit directly in application code. Zero disables the limit, positive values set the maximum, and negative values panic at construction. Capacity checks and creation are atomic; expired sessions do not consume slots.
 - `MemoryLockoutOptions.CapacityPolicy` selects `AllowUntrackedKeys` (default) or `RejectNewKeys`. The former permits verification of unknown keys at capacity; the latter rejects them before verification. Both preserve active locks and the configured record limit.
 - Client IP header selection is configurable through `clientip.Options.Headers`, `middleware.RateLimitKeyOptions.Headers`, and auth HTTP `ClientIPHeaders` options. Nil uses the default order, a non-nil empty list disables forwarded IP headers, and a non-empty list replaces the default selection. Login rate limits inherit the handler's header selection unless explicitly overridden.
+
+### Changed
+
+- Updated `gorm.io/driver/postgres` from v1.6.2 to v1.6.3.
 
 ### Security
 
