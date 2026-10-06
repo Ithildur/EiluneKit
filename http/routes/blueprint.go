@@ -127,8 +127,6 @@ func NewBlueprint(opts ...BlueprintOption) *Blueprint {
 			opt(&cfg)
 		}
 	}
-	cfg.tags = slices.Clone(cfg.tags)
-	cfg.middleware = slices.Clone(cfg.middleware)
 	return &Blueprint{defaults: cfg}
 }
 
@@ -140,9 +138,6 @@ func NewBlueprint(opts ...BlueprintOption) *Blueprint {
 // 非空路径未以单个斜线开头或含首尾空白时 panic。
 func (b *Blueprint) Add(routeList ...Route) {
 	b = requireBlueprint(b)
-	if len(routeList) == 0 {
-		return
-	}
 	owned := cloneRoutes(routeList)
 	for i := range owned {
 		if err := routepath.Validate(owned[i].Path); err != nil {

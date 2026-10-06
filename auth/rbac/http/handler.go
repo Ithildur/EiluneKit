@@ -40,9 +40,7 @@ type refreshRequest struct {
 	RefreshToken string `json:"refresh_token" jsonschema:"writeOnly=true"`
 }
 
-type logoutRequest struct {
-	RefreshToken string `json:"refresh_token" jsonschema:"writeOnly=true"`
-}
+type logoutRequest refreshRequest
 
 type tokenResponse struct {
 	AccessToken      string             `json:"access_token"`
@@ -99,11 +97,6 @@ func (h *Handler) Routes() []routes.Route {
 	if h == nil {
 		panic("rbac auth: handler is nil")
 	}
-	maxBytes := h.options.MaxBodyBytes
-	if maxBytes <= 0 {
-		maxBytes = defaultMaxBodyBytes
-	}
-
 	authRoutes := routes.NewBlueprint(
 		routes.DefaultTags("auth"),
 		routes.DefaultAuth(routes.AuthPublic),
@@ -134,7 +127,7 @@ func (h *Handler) Routes() []routes.Route {
 		}
 	}
 	loginOpts = append(loginOpts,
-		routes.Use(middleware.LimitBody(maxBytes)),
+		routes.Use(middleware.LimitBody(h.options.MaxBodyBytes)),
 		routes.Use(middleware.RequireJSONBody),
 	)
 	authRoutes.Post(
@@ -156,7 +149,7 @@ func (h *Handler) Routes() []routes.Route {
 		http.StatusServiceUnavailable,
 	)
 	refreshOpts = append(refreshOpts,
-		routes.Use(middleware.LimitBody(maxBytes)),
+		routes.Use(middleware.LimitBody(h.options.MaxBodyBytes)),
 		routes.Use(middleware.RequireJSONBody),
 	)
 	authRoutes.Post(
@@ -178,7 +171,7 @@ func (h *Handler) Routes() []routes.Route {
 		http.StatusServiceUnavailable,
 	)
 	logoutOpts = append(logoutOpts,
-		routes.Use(middleware.LimitBody(maxBytes)),
+		routes.Use(middleware.LimitBody(h.options.MaxBodyBytes)),
 		routes.Use(middleware.RequireJSONBody),
 	)
 	authRoutes.Post(
@@ -204,9 +197,7 @@ func (h *Handler) Routes() []routes.Route {
 		meOpts...,
 	)
 
-	root := routes.NewBlueprint()
-	root.Include(*h.options.BasePath, authRoutes)
-	return root.Routes()
+	return authRoutes.RoutesAt(*h.options.BasePath)
 }
 
 func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -263,7 +254,7 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSONError(w, http.StatusUnauthorized, "unauthorized", "refresh token invalid")
 		return
 	}
-	response.WriteJSON(w, http.StatusOK, responseFromRefresh(result))
+	response.WriteJSON(w, http.StatusOK, responseFromTokens(corerbac.Tokens(result)))
 }
 
 func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -325,18 +316,6 @@ func responseFromTokens(tokens corerbac.Tokens) tokenResponse {
 		ExpiresAt:        formatTime(tokens.AccessExpiresAt),
 		SessionOnly:      tokens.SessionOnly,
 		User:             tokens.Principal,
-	}
-}
-
-func responseFromRefresh(result corerbac.RefreshResult) tokenResponse {
-	return tokenResponse{
-		AccessToken:      result.AccessToken,
-		RefreshToken:     result.RefreshToken,
-		AccessExpiresAt:  formatTime(result.AccessExpiresAt),
-		RefreshExpiresAt: formatTime(result.RefreshExpiresAt),
-		ExpiresAt:        formatTime(result.AccessExpiresAt),
-		SessionOnly:      result.SessionOnly,
-		User:             result.Principal,
 	}
 }
 

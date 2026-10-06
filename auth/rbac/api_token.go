@@ -11,7 +11,6 @@ import (
 	"uuid"
 
 	authcore "github.com/Ithildur/EiluneKit/auth"
-	"github.com/Ithildur/EiluneKit/contextutil"
 )
 
 const (
@@ -137,12 +136,4 @@ func publicAPIToken(token APIToken) APIToken {
 	token.Hash = ""
 	token.Scopes = append([]string(nil), token.Scopes...)
 	return token
-}
-
-func requireAPITokenStore(ctx context.Context, store APITokenStore) (context.Context, error) {
-	ctx = contextutil.Require(ctx)
-	if store == nil {
-		return ctx, ErrAPITokenStoreMissing
-	}
-	return ctx, nil
 }

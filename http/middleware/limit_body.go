@@ -7,11 +7,12 @@ import "net/http"
 // LimitBody 在 maxBytes > 0 时设置 http.MaxBytesReader。
 // 在解码请求体前调用 LimitBody。
 func LimitBody(maxBytes int64) func(http.Handler) http.Handler {
+	if maxBytes <= 0 {
+		return func(next http.Handler) http.Handler { return next }
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if maxBytes > 0 {
-				r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
-			}
+			r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 			next.ServeHTTP(w, r)
 		})
 	}

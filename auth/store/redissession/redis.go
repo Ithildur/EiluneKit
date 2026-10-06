@@ -126,7 +126,18 @@ func (s *Store) UserVersion(ctx context.Context, userID string) (int64, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.readTimeout)
 	defer cancel()
-	return s.userVersionWithContext(ctx, userID)
+	val, err := s.client.Get(ctx, s.userVersionKey(userID)).Result()
+	if errors.Is(err, redis.Nil) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, authstore.ErrStoreUnavailable
+	}
+	version, convErr := strconv.ParseInt(val, 10, 64)
+	if convErr != nil {
+		return 0, fmt.Errorf("invalid user version %q", val)
+	}
+	return version, nil
 }
 
 // BumpUserVersion invalidates all sessions for userID.
@@ -216,10 +227,6 @@ func (s *Store) Session(ctx context.Context, sessionID string) (authstore.Sessio
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.readTimeout)
 	defer cancel()
-	return s.sessionWithContext(ctx, sessionID)
-}
-
-func (s *Store) sessionWithContext(ctx context.Context, sessionID string) (authstore.SessionState, bool, error) {
 	values, err := s.client.HGetAll(ctx, s.sessionKey(sessionID)).Result()
 	if err != nil {
 		return authstore.SessionState{}, false, authstore.ErrStoreUnavailable
@@ -287,7 +294,11 @@ func (s *Store) RotateRefresh(ctx context.Context, sessionID, userID string, exp
 	if err != nil {
 		return false, authstore.ErrStoreUnavailable
 	}
-	return scriptBoolResult(res)
+	value, ok := res.(int64)
+	if !ok {
+		return false, fmt.Errorf("unexpected script result type %T", res)
+	}
+	return value == 1, nil
 }
 
 // RevokeSession deletes a session.
@@ -491,21 +502,6 @@ func (s *Store) userVersionKey(userID string) string {
 	return s.prefix + "user:" + userID + ":version"
 }
 
-func (s *Store) userVersionWithContext(ctx context.Context, userID string) (int64, error) {
-	val, err := s.client.Get(ctx, s.userVersionKey(userID)).Result()
-	if errors.Is(err, redis.Nil) {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, authstore.ErrStoreUnavailable
-	}
-	version, convErr := strconv.ParseInt(val, 10, 64)
-	if convErr != nil {
-		return 0, fmt.Errorf("invalid user version %q", val)
-	}
-	return version, nil
-}
-
 func (s *Store) userSessionsKey(userID string) string {
 	return s.prefix + "user:" + userID + ":sessions"
 }
@@ -524,23 +520,7 @@ func (s *Store) trimSessionIndexWithContext(ctx context.Context, key string, now
 	return err
 }
 
-func scriptBoolResult(res any) (bool, error) {
-	switch v := res.(type) {
-	case int64:
-		return v == 1, nil
-	case string:
-		return v == "1", nil
-	case []byte:
-		return string(v) == "1", nil
-	default:
-		return false, fmt.Errorf("unexpected script result type %T", res)
-	}
-}
-
 func ceilTTLMilliseconds(ttl time.Duration) int64 {
-	if ttl <= 0 {
-		return 0
-	}
 	ms := ttl / time.Millisecond
 	if ttl%time.Millisecond != 0 {
 		ms++

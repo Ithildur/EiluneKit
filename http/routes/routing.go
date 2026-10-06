@@ -125,7 +125,7 @@ func MountWithOptions(r chi.Router, prefix string, routes []Route, opts MountOpt
 		if err := routepath.Validate(raw.Path); err != nil {
 			return fmt.Errorf("routes: route[%d]: %w", i, err)
 		}
-		method, path, err := normalizeRoute(raw.Method, routepath.Join(prefix, raw.Path))
+		method, path, err := normalizeRoute(raw.Method, prefix+raw.Path)
 		if err != nil {
 			return fmt.Errorf("routes: route[%d]: %w", i, err)
 		}
@@ -262,16 +262,12 @@ func WithPrefix(prefix string, routes []Route) []Route {
 	if err := routepath.ValidatePrefix(prefix); err != nil {
 		panic("routes: " + err.Error())
 	}
-	if len(routes) == 0 {
-		return nil
-	}
-
 	out := cloneRoutes(routes)
 	for i := range out {
 		if err := routepath.Validate(out[i].Path); err != nil {
 			panic("routes: " + err.Error())
 		}
-		path, err := routepath.Pattern(routepath.Join(prefix, out[i].Path))
+		path, err := routepath.Pattern(prefix + out[i].Path)
 		if err != nil {
 			panic("routes: " + err.Error())
 		}
@@ -314,9 +310,6 @@ func withPathParameters(path string, params []Parameter) []Parameter {
 }
 
 func sanitizeMarkdownCell(s string) string {
-	if s == "" {
-		return s
-	}
 	s = strings.ReplaceAll(s, "\r\n", " ")
 	s = strings.ReplaceAll(s, "\n", " ")
 	s = strings.ReplaceAll(s, "\r", " ")

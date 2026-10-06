@@ -98,11 +98,4 @@ type Tokens struct {
 
 // RefreshResult carries rotated tokens and principal.
 // RefreshResult 保存轮换后的 token 与主体。
-type RefreshResult struct {
-	Principal        authcore.Principal
-	AccessToken      string
-	AccessExpiresAt  time.Time
-	RefreshToken     string
-	RefreshExpiresAt time.Time
-	SessionOnly      bool
-}
+type RefreshResult Tokens

@@ -1,6 +1,10 @@
 package routes
 
-import "github.com/go-chi/chi/v5"
+import (
+	"slices"
+
+	"github.com/go-chi/chi/v5"
+)
 
 // Router collects routes under prefixes.
 // Build routes at startup.
@@ -15,7 +19,7 @@ type Router struct {
 // NewRouter returns an empty Router.
 // NewRouter 返回空 Router。
 func NewRouter() *Router {
-	return &Router{routes: make([]Route, 0)}
+	return &Router{}
 }
 
 // Include adds routes under prefix.
@@ -60,10 +64,6 @@ func (r *Router) ExportMarkdown() (string, error) {
 // WithTags returns routes with tags appended.
 // WithTags 返回追加 tags 后的路由副本。
 func WithTags(routes []Route, tags ...string) []Route {
-	if len(routes) == 0 {
-		return nil
-	}
-
 	out := cloneRoutes(routes)
 	if len(tags) == 0 {
 		return out
@@ -78,18 +78,13 @@ func WithTags(routes []Route, tags ...string) []Route {
 // WithMiddleware returns routes with prepended middleware.
 // WithMiddleware 返回预置最外层中间件后的路由副本。
 func WithMiddleware(routes []Route, mws ...Middleware) []Route {
-	if len(routes) == 0 {
-		return nil
-	}
-
 	out := cloneRoutes(routes)
 	if len(mws) == 0 {
 		return out
 	}
 
 	for i := range out {
-		merged := append([]Middleware(nil), mws...)
-		out[i].Middleware = append(merged, out[i].Middleware...)
+		out[i].Middleware = slices.Concat(mws, out[i].Middleware)
 	}
 	return out
 }

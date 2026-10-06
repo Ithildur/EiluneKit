@@ -145,13 +145,12 @@ func resolveDir(relPath string, requireIndex bool, opts Options) (string, error)
 		}
 		for _, base := range candidates {
 			full := filepath.Join(base, relFSPath)
+			entry := full
+			wantDir := !requireIndex
 			if requireIndex {
-				if fileExists(filepath.Join(full, "index.html")) {
-					return full, nil
-				}
-				continue
+				entry = filepath.Join(full, "index.html")
 			}
-			if dirExists(full) {
+			if info, err := os.Stat(entry); err == nil && info.IsDir() == wantDir {
 				return full, nil
 			}
 		}
@@ -188,14 +187,4 @@ func cleanProjectPath(raw string) (string, string, error) {
 	}
 
 	return normalized, filepath.FromSlash(normalized), nil
-}
-
-func fileExists(p string) bool {
-	info, err := os.Stat(p)
-	return err == nil && !info.IsDir()
-}
-
-func dirExists(p string) bool {
-	info, err := os.Stat(p)
-	return err == nil && info.IsDir()
 }

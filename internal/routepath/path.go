@@ -34,12 +34,6 @@ func ValidatePrefix(prefix string) error {
 	return nil
 }
 
-// Join combines a validated route prefix and endpoint path, preserving trailing slashes.
-// Join 组合已校验的路由前缀和端点路径，保留尾斜线。
-func Join(prefix, path string) string {
-	return prefix + path
-}
-
 // Pattern validates a non-empty final path.
 // Pattern 校验非空的最终路径。
 func Pattern(path string) (string, error) {
@@ -50,4 +44,24 @@ func Pattern(path string) (string, error) {
 		return "", fmt.Errorf("route path must not be empty; use \"/\" for the root")
 	}
 	return path, nil
+}
+
+// ParamEnd returns the closing brace index for the parameter at start, or -1 if unclosed.
+// Nested braces in regular expressions are included.
+// ParamEnd 返回 start 处参数的闭合括号索引；未闭合时返回 -1。
+// 正则表达式中的嵌套括号也会计入。
+func ParamEnd(path string, start int) int {
+	depth := 0
+	for i := start; i < len(path); i++ {
+		switch path[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
 }

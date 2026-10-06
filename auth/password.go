@@ -25,7 +25,18 @@ var (
 // ValidateStaticPassword validates a static password using visible ASCII only.
 // ValidateStaticPassword 使用仅可见 ASCII 规则校验静态密码。
 func ValidateStaticPassword(password string) error {
-	return validateVisibleASCIIWithoutWhitespace(password, ErrPasswordEmpty, ErrPasswordContainsSpace, ErrPasswordInvalidCharacter)
+	if password == "" {
+		return ErrPasswordEmpty
+	}
+	for _, r := range password {
+		switch {
+		case r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == '\v' || r == '\f':
+			return ErrPasswordContainsSpace
+		case r < '!' || r > '~':
+			return ErrPasswordInvalidCharacter
+		}
+	}
+	return nil
 }
 
 // VerifyCredential compares two credential strings using an exact byte match.
@@ -57,19 +68,4 @@ func NewStaticPassword(userID, expectedPassword string) (LoginAuthenticator, err
 		}
 		return userID, true, nil
 	}), nil
-}
-
-func validateVisibleASCIIWithoutWhitespace(value string, emptyErr, whitespaceErr, invalidErr error) error {
-	if value == "" {
-		return emptyErr
-	}
-	for _, r := range value {
-		switch {
-		case r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == '\v' || r == '\f':
-			return whitespaceErr
-		case r < '!' || r > '~':
-			return invalidErr
-		}
-	}
-	return nil
 }

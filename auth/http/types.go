@@ -55,11 +55,7 @@ type loginResponse struct {
 	CSRFToken   string `json:"csrf_token"`
 }
 
-type refreshResponse struct {
-	AccessToken string `json:"access_token"`
-	ExpiresAt   string `json:"expires_at" jsonschema:"format=date-time"`
-	CSRFToken   string `json:"csrf_token"`
-}
+type refreshResponse loginResponse
 
 type sessionResponse struct {
 	ID          string `json:"id"`

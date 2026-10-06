@@ -88,11 +88,7 @@ func (h *textHandler) WithGroup(name string) slog.Handler {
 		return h
 	}
 	next := *h
-	if next.groupPrefix == "" {
-		next.groupPrefix = name + "."
-	} else {
-		next.groupPrefix = next.groupPrefix + name + "."
-	}
+	next.groupPrefix += name + "."
 	return &next
 }
 

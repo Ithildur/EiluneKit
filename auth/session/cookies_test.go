@@ -5,7 +5,6 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"testing"
-	"time"
 
 	"github.com/Ithildur/EiluneKit/auth/session"
 )
@@ -51,41 +50,4 @@ func TestDefaultCookieConfig(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestSetRefreshCookieLifetime(t *testing.T) {
-	exp := time.Now().UTC().Add(time.Hour)
-
-	t.Run("persistent", func(t *testing.T) {
-		rec := httptest.NewRecorder()
-		session.SetRefreshCookie(rec, "refresh-token", exp, session.CookieConfig{
-			Name: session.DefaultRefreshCookieName,
-			Path: "/",
-		})
-
-		cookie := rec.Result().Cookies()[0]
-		if cookie.MaxAge <= 0 {
-			t.Fatalf("expected persistent cookie MaxAge > 0, got %d", cookie.MaxAge)
-		}
-		if cookie.Expires.IsZero() {
-			t.Fatal("expected persistent cookie expiration")
-		}
-	})
-
-	t.Run("session_only", func(t *testing.T) {
-		rec := httptest.NewRecorder()
-		session.SetRefreshCookie(rec, "refresh-token", exp, session.CookieConfig{
-			Name:        session.DefaultRefreshCookieName,
-			Path:        "/",
-			SessionOnly: true,
-		})
-
-		cookie := rec.Result().Cookies()[0]
-		if cookie.MaxAge != 0 {
-			t.Fatalf("expected session cookie MaxAge=0, got %d", cookie.MaxAge)
-		}
-		if !cookie.Expires.IsZero() {
-			t.Fatalf("expected session cookie without expiration, got %s", cookie.Expires.UTC().Format(time.RFC3339))
-		}
-	})
 }

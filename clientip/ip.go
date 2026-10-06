@@ -27,9 +27,6 @@ type Options struct {
 // FromRemote 从 remoteAddr 解析 IP。
 func FromRemote(remoteAddr string) (netip.Addr, bool) {
 	remote := strings.TrimSpace(remoteAddr)
-	if remote == "" {
-		return netip.Addr{}, false
-	}
 	if ip, err := netip.ParseAddr(remote); err == nil {
 		return ip, true
 	}
@@ -84,7 +81,7 @@ func forwardedCandidates(header http.Header, headers []string) []netip.Addr {
 		case "X-Forwarded-For":
 			ips = parseXForwardedForList(header.Get(name))
 		default:
-			if ip, ok := parseSingleIPHeader(header.Get(name)); ok {
+			if ip, err := netip.ParseAddr(strings.TrimSpace(header.Get(name))); err == nil {
 				ips = []netip.Addr{ip}
 			}
 		}
@@ -96,27 +93,18 @@ func forwardedCandidates(header http.Header, headers []string) []netip.Addr {
 }
 
 func parseForwardedForList(raw string) []netip.Addr {
-	if raw == "" {
-		return nil
-	}
-	parts := strings.Split(raw, ",")
-	out := make([]netip.Addr, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
+	var out []netip.Addr
+	for part := range strings.SplitSeq(raw, ",") {
 		for param := range strings.SplitSeq(part, ";") {
 			param = strings.TrimSpace(param)
-			if len(param) < 4 {
-				continue
-			}
 			if !strings.HasPrefix(strings.ToLower(param), "for=") {
 				continue
 			}
 			val := strings.TrimSpace(param[4:])
 			val = strings.Trim(val, "\"")
-			val = stripPort(val)
+			if host, _, err := net.SplitHostPort(val); err == nil {
+				val = host
+			}
 			val = strings.TrimPrefix(val, "[")
 			val = strings.TrimSuffix(val, "]")
 			if ip, err := netip.ParseAddr(val); err == nil {
@@ -129,49 +117,16 @@ func parseForwardedForList(raw string) []netip.Addr {
 }
 
 func parseXForwardedForList(raw string) []netip.Addr {
-	if raw == "" {
-		return nil
-	}
-	parts := strings.Split(raw, ",")
-	out := make([]netip.Addr, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		if ip, err := netip.ParseAddr(p); err == nil {
+	var out []netip.Addr
+	for p := range strings.SplitSeq(raw, ",") {
+		if ip, err := netip.ParseAddr(strings.TrimSpace(p)); err == nil {
 			out = append(out, ip)
 		}
 	}
 	return out
 }
 
-func parseSingleIPHeader(raw string) (netip.Addr, bool) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return netip.Addr{}, false
-	}
-	ip, err := netip.ParseAddr(raw)
-	if err != nil {
-		return netip.Addr{}, false
-	}
-	return ip, true
-}
-
-func stripPort(host string) string {
-	if host == "" {
-		return ""
-	}
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		return h
-	}
-	return host
-}
-
 func isTrustedIP(ip netip.Addr, trusted []netip.Prefix) bool {
-	if !ip.IsValid() {
-		return false
-	}
 	for _, p := range trusted {
 		if p.Contains(ip) {
 			return true

@@ -102,11 +102,7 @@ func (h *Handler) Routes() []routes.Route {
 	if rate := LoginRateLimit(rateLimitOpts); rate != nil {
 		loginChain = append(loginChain, rate)
 	}
-	maxBytes := opts.MaxBodyBytes
-	if maxBytes <= 0 {
-		maxBytes = defaultMaxBodyBytes
-	}
-	loginChain = append(loginChain, middleware.LimitBody(maxBytes))
+	loginChain = append(loginChain, middleware.LimitBody(opts.MaxBodyBytes))
 
 	authRoutes := routes.NewBlueprint(
 		routes.DefaultTags("auth"),
@@ -240,9 +236,7 @@ func (h *Handler) Routes() []routes.Route {
 	)
 	authRoutes.Include("/sessions", sessions)
 
-	root := routes.NewBlueprint()
-	root.Include(*opts.BasePath, authRoutes)
-	return root.Routes()
+	return authRoutes.RoutesAt(*opts.BasePath)
 }
 
 func (h *Handler) handleLogin(w stdhttp.ResponseWriter, r *stdhttp.Request) {

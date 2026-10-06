@@ -43,27 +43,26 @@ type RateLimitKeyOptions struct {
 //
 //	r.Use(middleware.RateLimit(middleware.RateLimitOptions{Requests: 100, Window: time.Minute}))
 func RateLimit(opts RateLimitOptions) func(http.Handler) http.Handler {
-	effective := opts
-	if effective.Requests <= 0 {
-		effective.Requests = defaultRateLimitRequests
+	if opts.Requests <= 0 {
+		opts.Requests = defaultRateLimitRequests
 	}
-	if effective.Window <= 0 {
-		effective.Window = defaultRateLimitWindow
+	if opts.Window <= 0 {
+		opts.Window = defaultRateLimitWindow
 	}
-	if effective.KeyFunc == nil {
-		effective.KeyFunc = RateLimitKeyByIP(24, 40, RateLimitKeyOptions{})
+	if opts.KeyFunc == nil {
+		opts.KeyFunc = RateLimitKeyByIP(24, 40, RateLimitKeyOptions{})
 	}
-	if effective.OnLimit == nil {
-		effective.OnLimit = func(w http.ResponseWriter, r *http.Request) {
+	if opts.OnLimit == nil {
+		opts.OnLimit = func(w http.ResponseWriter, r *http.Request) {
 			response.WriteJSONError(w, http.StatusTooManyRequests, "rate_limited", "too many requests")
 		}
 	}
 
 	return httprate.LimitBy(
-		effective.Requests,
-		effective.Window,
-		effective.KeyFunc,
-		httprate.WithLimitHandler(effective.OnLimit),
+		opts.Requests,
+		opts.Window,
+		opts.KeyFunc,
+		httprate.WithLimitHandler(opts.OnLimit),
 	)
 }
 

@@ -126,7 +126,9 @@ func applyOptions(base, override Options) Options {
 		base.MaxBodyBytes = override.MaxBodyBytes
 	}
 	if override.RateLimit != nil {
-		base.RateLimit = mergeRateLimitOptions(base.RateLimit, override.RateLimit)
+		base.RateLimit = new(*override.RateLimit)
+		base.RateLimit.TrustedProxies = slices.Clone(override.RateLimit.TrustedProxies)
+		base.RateLimit.ClientIPHeaders = slices.Clone(override.RateLimit.ClientIPHeaders)
 	}
 	if override.LoginLockout != nil {
 		base.LoginLockout = override.LoginLockout
@@ -146,39 +148,6 @@ func applyOptions(base, override Options) Options {
 	}
 	base.CSRFCookiePath = normalizePath(base.CSRFCookiePath)
 	return base
-}
-
-func mergeRateLimitOptions(base *RateLimitOptions, override *RateLimitOptions) *RateLimitOptions {
-	if override == nil {
-		return base
-	}
-	if base == nil {
-		base = new(DefaultRateLimitOptions())
-	}
-	merged := *base
-	merged.Disabled = override.Disabled
-	if override.Requests > 0 {
-		merged.Requests = override.Requests
-	}
-	if override.Window > 0 {
-		merged.Window = override.Window
-	}
-	if override.IPv4PrefixBits > 0 {
-		merged.IPv4PrefixBits = override.IPv4PrefixBits
-	}
-	if override.IPv6PrefixBits > 0 {
-		merged.IPv6PrefixBits = override.IPv6PrefixBits
-	}
-	if len(override.TrustedProxies) > 0 {
-		merged.TrustedProxies = append([]netip.Prefix(nil), override.TrustedProxies...)
-	}
-	if override.ClientIPHeaders != nil {
-		merged.ClientIPHeaders = slices.Clone(override.ClientIPHeaders)
-	}
-	if override.KeyFunc != nil {
-		merged.KeyFunc = override.KeyFunc
-	}
-	return &merged
 }
 
 func normalizePath(p string) string {

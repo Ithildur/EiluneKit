@@ -77,7 +77,7 @@ func ReadCookie(r *http.Request, name string) string {
 		return ""
 	}
 	c, err := r.Cookie(name)
-	if err != nil || c == nil {
+	if err != nil {
 		return ""
 	}
 	return c.Value
@@ -93,11 +93,7 @@ func ValidateDoubleSubmit(r *http.Request, cookieName, headerName string) bool {
 	if cookie == "" {
 		return false
 	}
-	header := strings.TrimSpace(r.Header.Get(headerName))
-	if header == "" {
-		return false
-	}
-	return header == cookie
+	return strings.TrimSpace(r.Header.Get(headerName)) == cookie
 }
 
 // DefaultCookieConfig derives Secure and SameSite from r.
@@ -127,9 +123,6 @@ func DefaultCookieConfig(r *http.Request, opts CookieTrustOptions) CookieConfig 
 }
 
 func isTrustedProxyPeer(r *http.Request, trusted []netip.Prefix) bool {
-	if r == nil || len(trusted) == 0 {
-		return false
-	}
 	ip, ok := clientip.FromRemote(r.RemoteAddr)
 	if !ok {
 		return false
@@ -163,9 +156,6 @@ func setCookie(w http.ResponseWriter, token string, exp time.Time, cfg CookieCon
 }
 
 func cookiePath(path string) string {
-	if path == "" {
-		return "/"
-	}
 	if strings.HasPrefix(path, "/") {
 		return path
 	}

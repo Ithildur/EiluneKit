@@ -53,9 +53,10 @@ func (m Middleware) RequireAuth() func(http.Handler) http.Handler {
 // RequireRole requires a role allowed by the configured RolePolicy.
 // RequireRole 要求配置的 RolePolicy 允许该角色。
 func (m Middleware) RequireRole(role string) func(http.Handler) http.Handler {
+	required := strings.TrimSpace(role)
+	policy := m.rolePolicy()
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			required := strings.TrimSpace(role)
 			if required == "" {
 				writeAuthMisconfigured(w)
 				return
@@ -64,7 +65,7 @@ func (m Middleware) RequireRole(role string) func(http.Handler) http.Handler {
 			if !ok {
 				return
 			}
-			if !m.rolePolicy().Allows(p.Role, required) {
+			if !policy.Allows(p.Role, required) {
 				writeForbidden(w)
 				return
 			}
@@ -76,11 +77,16 @@ func (m Middleware) RequireRole(role string) func(http.Handler) http.Handler {
 // RequireAnyRole requires at least one allowed role.
 // RequireAnyRole 要求至少一个被允许的角色。
 func (m Middleware) RequireAnyRole(roles ...string) func(http.Handler) http.Handler {
-	required := append([]string(nil), roles...)
+	required := make([]string, 0, len(roles))
+	for _, role := range roles {
+		if role = strings.TrimSpace(role); role != "" {
+			required = append(required, role)
+		}
+	}
+	policy := m.rolePolicy()
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			cleaned := cleanStrings(append([]string(nil), required...))
-			if len(cleaned) == 0 {
+			if len(required) == 0 {
 				writeAuthMisconfigured(w)
 				return
 			}
@@ -88,8 +94,7 @@ func (m Middleware) RequireAnyRole(roles ...string) func(http.Handler) http.Hand
 			if !ok {
 				return
 			}
-			policy := m.rolePolicy()
-			for _, role := range cleaned {
+			for _, role := range required {
 				if policy.Allows(p.Role, role) {
 					next.ServeHTTP(w, req)
 					return
@@ -103,9 +108,9 @@ func (m Middleware) RequireAnyRole(roles ...string) func(http.Handler) http.Hand
 // RequireScope requires a scope.
 // RequireScope 要求指定 scope。
 func (m Middleware) RequireScope(scope string) func(http.Handler) http.Handler {
+	required := strings.TrimSpace(scope)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			required := strings.TrimSpace(scope)
 			if required == "" {
 				writeAuthMisconfigured(w)
 				return
@@ -126,10 +131,11 @@ func (m Middleware) RequireScope(scope string) func(http.Handler) http.Handler {
 // RequireRoleAndScope requires both a role and a scope.
 // RequireRoleAndScope 同时要求角色与 scope。
 func (m Middleware) RequireRoleAndScope(role, scope string) func(http.Handler) http.Handler {
+	requiredRole := strings.TrimSpace(role)
+	requiredScope := strings.TrimSpace(scope)
+	policy := m.rolePolicy()
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			requiredRole := strings.TrimSpace(role)
-			requiredScope := strings.TrimSpace(scope)
 			if requiredRole == "" || requiredScope == "" {
 				writeAuthMisconfigured(w)
 				return
@@ -138,7 +144,7 @@ func (m Middleware) RequireRoleAndScope(role, scope string) func(http.Handler) h
 			if !ok {
 				return
 			}
-			if !m.rolePolicy().Allows(p.Role, requiredRole) || !p.HasScope(requiredScope) {
+			if !policy.Allows(p.Role, requiredRole) || !p.HasScope(requiredScope) {
 				writeForbidden(w)
 				return
 			}
@@ -182,28 +188,15 @@ func (m Middleware) rolePolicy() corerbac.RolePolicy {
 }
 
 func parseBearerHeader(header string) (string, bool) {
-	parts := strings.Fields(strings.TrimSpace(header))
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || parts[1] == "" {
+	parts := strings.Fields(header)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
 		return "", false
 	}
 	return parts[1], true
 }
 
-func cleanStrings(values []string) []string {
-	out := values[:0]
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value != "" {
-			out = append(out, value)
-		}
-	}
-	return out
-}
-
 func writeAuthFailure(w http.ResponseWriter, err error) {
 	switch {
-	case err == nil:
-		response.WriteJSONError(w, http.StatusInternalServerError, "auth_error", "auth failed")
 	case errors.Is(err, corerbac.ErrLoginLocked), errors.Is(err, corerbac.ErrLockoutCapacity), errors.Is(err, authstore.ErrSessionLimitReached):
 		response.WriteJSONError(w, http.StatusUnauthorized, "unauthorized", "invalid credentials")
 	case errors.Is(err, authjwt.ErrStoreUnavailable):

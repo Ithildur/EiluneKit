@@ -73,7 +73,7 @@ func LoginRateLimit(opts *RateLimitOptions) func(stdhttp.Handler) stdhttp.Handle
 			effective.IPv4PrefixBits,
 			effective.IPv6PrefixBits,
 			middleware.RateLimitKeyOptions{
-				TrustedProxies: append([]netip.Prefix(nil), effective.TrustedProxies...),
+				TrustedProxies: effective.TrustedProxies,
 				Headers:        effective.ClientIPHeaders,
 			},
 		)

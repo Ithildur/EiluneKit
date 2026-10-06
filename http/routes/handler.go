@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+
+	"github.com/Ithildur/EiluneKit/internal/routepath"
 )
 
 // HandlerFunc is the set of handler signatures accepted by Blueprint methods.
@@ -195,7 +197,7 @@ func pathParamNames(path string) []string {
 	for i := 0; i < len(path); i++ {
 		switch path[i] {
 		case '{':
-			end := pathParamEnd(path, i)
+			end := routepath.ParamEnd(path, i)
 			if end < 0 {
 				return names
 			}
@@ -211,22 +213,6 @@ func pathParamNames(path string) []string {
 		}
 	}
 	return names
-}
-
-func pathParamEnd(path string, start int) int {
-	depth := 0
-	for i := start; i < len(path); i++ {
-		switch path[i] {
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return i
-			}
-		}
-	}
-	return -1
 }
 
 func duplicatePathParam(names []string) string {

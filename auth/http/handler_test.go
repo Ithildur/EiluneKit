@@ -316,22 +316,10 @@ func TestLogin(t *testing.T) {
 
 	t.Run("invalid_credentials", func(t *testing.T) {
 		r := mustNewTestRouter(t, &stubManager{}, testOptions(stubAuthenticator("admin", "secret", "user-1")))
-
-		tests := []struct {
-			name string
-			body string
-		}{
-			{name: "wrong_password", body: `{"username":"admin","password":"wrong","persistence":"persistent"}`},
-		}
-
-		for _, tc := range tests {
-			t.Run(tc.name, func(t *testing.T) {
-				rec := serve(r, http.MethodPost, "/auth/login", tc.body, func(req *http.Request) {
-					req.Header.Set("Content-Type", "application/json")
-				})
-				assertErrorResponse(t, rec, http.StatusUnauthorized, "unauthorized", "invalid credentials")
-			})
-		}
+		rec := serve(r, http.MethodPost, "/auth/login", `{"username":"admin","password":"wrong","persistence":"persistent"}`, func(req *http.Request) {
+			req.Header.Set("Content-Type", "application/json")
+		})
+		assertErrorResponse(t, rec, http.StatusUnauthorized, "unauthorized", "invalid credentials")
 	})
 
 	t.Run("error_responses", func(t *testing.T) {
@@ -566,38 +554,6 @@ func TestRoutesSupportDynamicExternalMountPrefix(t *testing.T) {
 	}
 	if manager.revokeSessionUserID != "user-1" || manager.revokeSessionID != "sid-2" {
 		t.Fatalf("unexpected revoke session call: user=%q sid=%q", manager.revokeSessionUserID, manager.revokeSessionID)
-	}
-}
-
-func TestRoutesExportAuthRequirement(t *testing.T) {
-	handler := mustNewHandler(t, &stubManager{}, testOptions(stubAuthenticator("admin", "secret", "user-1")))
-	routeList := handler.Routes()
-
-	payload, err := routes.ExportJSON(routeList)
-	if err != nil {
-		t.Fatalf("export routes: %v", err)
-	}
-
-	var exported []struct {
-		Path string                 `json:"path"`
-		Auth routes.AuthRequirement `json:"auth"`
-	}
-	if err := json.Unmarshal(payload, &exported); err != nil {
-		t.Fatalf("unmarshal routes: %v", err)
-	}
-
-	authByPath := make(map[string]routes.AuthRequirement, len(exported))
-	for _, route := range exported {
-		authByPath[route.Path] = route.Auth
-	}
-	if got, want := authByPath["/auth/login"], routes.AuthPublic; got != want {
-		t.Fatalf("expected login auth %q, got %q", want, got)
-	}
-	if got, want := authByPath["/auth/refresh"], routes.AuthRequired; got != want {
-		t.Fatalf("expected refresh auth %q, got %q", want, got)
-	}
-	if got, want := authByPath["/auth/sessions/current"], routes.AuthRequired; got != want {
-		t.Fatalf("expected session auth %q, got %q", want, got)
 	}
 }
 

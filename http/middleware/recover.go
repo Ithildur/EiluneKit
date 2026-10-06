@@ -28,9 +28,8 @@ type RecoverOptions struct {
 // 响应开始后会中止请求，不再写入第二个响应。
 // panic 时关闭已接管的连接；http.ErrAbortHandler 不记录日志，直接再次抛出。
 func Recover(opts RecoverOptions) func(http.Handler) http.Handler {
-	logger := opts.Logger
-	if logger == nil {
-		logger = slog.Default()
+	if opts.Logger == nil {
+		opts.Logger = slog.Default()
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -47,7 +46,7 @@ func Recover(opts RecoverOptions) func(http.Handler) http.Handler {
 				if value == http.ErrAbortHandler {
 					panic(value)
 				}
-				logger.ErrorContext(r.Context(), "http panic",
+				opts.Logger.ErrorContext(r.Context(), "http panic",
 					"panic", value, "stack", string(debug.Stack()),
 					"method", r.Method, "path", r.URL.Path,
 					"request_id", RequestIDFromContext(r.Context()))

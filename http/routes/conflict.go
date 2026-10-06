@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Ithildur/EiluneKit/internal/routepath"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -108,7 +109,7 @@ func (n *routeNode) insert(path string, check bool) error {
 			continue
 		}
 
-		end := pathParamEnd(path, i)
+		end := routepath.ParamEnd(path, i)
 		name, expression, regex := strings.Cut(path[i+1:end], ":")
 		if expression != "" {
 			if !strings.HasPrefix(expression, "^") {

@@ -53,7 +53,7 @@ func New(auth TokenManager, login LoginAuthenticator) (*Service, error) {
 // ok 表示凭据是否通过校验。
 func (s *Service) Login(ctx context.Context, username, password string, opts IssueOptions) (Tokens, bool, error) {
 	ctx = contextutil.Require(ctx)
-	if err := s.requireLogin(); err != nil {
+	if err := s.requireAuth(); err != nil {
 		return Tokens{}, false, err
 	}
 
@@ -185,14 +185,4 @@ func (s *Service) requireAuth() error {
 	default:
 		return nil
 	}
-}
-
-func (s *Service) requireLogin() error {
-	if err := s.requireAuth(); err != nil {
-		return err
-	}
-	if s.login == nil {
-		return ErrLoginAuthenticatorMissing
-	}
-	return nil
 }

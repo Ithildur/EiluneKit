@@ -158,14 +158,8 @@ func (h *Handler) requireRefreshCookie() func(stdhttp.Handler) stdhttp.Handler {
 }
 
 func refreshTokenFromContext(ctx context.Context) (string, bool) {
-	if ctx == nil {
-		return "", false
-	}
 	refresh, ok := ctx.Value(refreshTokenContextKey{}).(string)
-	if !ok || refresh == "" {
-		return "", false
-	}
-	return refresh, true
+	return refresh, ok && refresh != ""
 }
 
 func parseBearerHeader(header string) (string, bool) {

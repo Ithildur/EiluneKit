@@ -108,7 +108,7 @@ func ClaimsFromContext(ctx context.Context) (Claims, bool) {
 // Manager 负责签发和校验由 SessionStore 支撑的 JWT。
 // User ID 必须非空，且不能包含首尾空白。
 type Manager struct {
-	signingKey string
+	signingKey []byte
 	store      authstore.SessionStore
 	accessTTL  time.Duration
 	refreshTTL time.Duration
@@ -172,7 +172,7 @@ func NewWithOptions(signingKey string, store authstore.SessionStore, opts Manage
 		opts.RefreshTTL = defaultRefreshTTL
 	}
 	return &Manager{
-		signingKey: signingKey,
+		signingKey: []byte(signingKey),
 		store:      store,
 		accessTTL:  opts.AccessTTL,
 		refreshTTL: opts.RefreshTTL,
@@ -391,7 +391,12 @@ func (m *Manager) ClearAllSessions(ctx context.Context) error {
 	if err := m.requireConfigured(); err != nil {
 		return err
 	}
-	return m.clearAllSessions(contextutil.Require(ctx))
+	ctx = contextutil.Require(ctx)
+	cleaner, ok := m.store.(authstore.SessionCleaner)
+	if !ok {
+		return ErrSessionClearUnsupported
+	}
+	return storeError(cleaner.ClearAllSessions(ctx))
 }
 
 func (m *Manager) signToken(userID, kind, sessionID string, version int64, ttl time.Duration) (signed string, exp time.Time, jti string, err error) {
@@ -413,7 +418,7 @@ func (m *Manager) signToken(userID, kind, sessionID string, version int64, ttl t
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signed, err = token.SignedString([]byte(m.signingKey))
+	signed, err = token.SignedString(m.signingKey)
 	if err != nil {
 		return "", time.Time{}, "", err
 	}
@@ -488,13 +493,13 @@ func (m *Manager) parseToken(tokenStr string) (Claims, bool) {
 		jwt.WithIssuer(m.issuer),
 		jwt.WithAudience(m.audience),
 	)
-	token, err := parser.ParseWithClaims(tokenStr, &claims, func(t *jwt.Token) (any, error) {
+	_, err := parser.ParseWithClaims(tokenStr, &claims, func(t *jwt.Token) (any, error) {
 		if t.Method != jwt.SigningMethodHS256 {
 			return nil, jwt.ErrTokenUnverifiable
 		}
-		return []byte(m.signingKey), nil
+		return m.signingKey, nil
 	})
-	if err != nil || token == nil || !token.Valid {
+	if err != nil {
 		return Claims{}, false
 	}
 	if claims.ID == "" || validateUserID(claims.Subject) != nil || claims.Kind == "" || claims.SessionID == "" {
@@ -535,23 +540,9 @@ func (m *Manager) revokeAllUserSessions(ctx context.Context, userID string, requ
 	return storeError(cleaner.ClearUserSessions(ctx, userID))
 }
 
-func (m *Manager) clearAllSessions(ctx context.Context) error {
-	cleaner, ok := m.store.(authstore.SessionCleaner)
-	if !ok {
-		return ErrSessionClearUnsupported
-	}
-	return storeError(cleaner.ClearAllSessions(ctx))
-}
-
 func (m *Manager) requireConfigured() error {
-	switch {
-	case m == nil:
+	if m == nil || m.store == nil {
 		return ErrManagerMisconfigured
-	case strings.TrimSpace(m.signingKey) == "":
-		return ErrManagerMisconfigured
-	case m.store == nil:
-		return ErrManagerMisconfigured
-	default:
-		return nil
 	}
+	return nil
 }

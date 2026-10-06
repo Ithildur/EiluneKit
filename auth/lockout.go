@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"maps"
 	"strings"
@@ -97,9 +96,8 @@ type MemoryLockoutOptions struct {
 // 使用 NewMemoryLockout 创建；零值不可直接使用。
 type MemoryLockout struct {
 	mu    sync.Mutex
-	items map[string]lockoutItem
+	items map[[sha256.Size]byte]lockoutItem
 	opts  MemoryLockoutOptions
-	now   func() time.Time
 }
 
 type lockoutItem struct {
@@ -128,14 +126,12 @@ func NewMemoryLockout(opts MemoryLockoutOptions) *MemoryLockout {
 	if opts.MaxKeys <= 0 {
 		opts.MaxKeys = defaultLockoutMaxKeys
 	}
-	now := opts.Now
-	if now == nil {
-		now = func() time.Time { return time.Now().UTC() }
+	if opts.Now == nil {
+		opts.Now = func() time.Time { return time.Now().UTC() }
 	}
 	return &MemoryLockout{
-		items: make(map[string]lockoutItem),
+		items: make(map[[sha256.Size]byte]lockoutItem),
 		opts:  opts,
-		now:   now,
 	}
 }
 
@@ -150,19 +146,19 @@ func (l *MemoryLockout) Check(ctx context.Context, key string) (time.Time, bool,
 	if l == nil {
 		return time.Time{}, false, ErrLockoutMissing
 	}
-	key, err := memoryLockoutKey(key)
+	hash, err := memoryLockoutKey(key)
 	if err != nil {
 		return time.Time{}, false, err
 	}
-	now := l.now()
+	now := l.opts.Now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	item, ok := l.items[key]
+	item, ok := l.items[hash]
 	if ok {
 		if !l.expired(item, now) {
 			return item.locked, item.locked.After(now), nil
 		}
-		delete(l.items, key)
+		delete(l.items, hash)
 	}
 	if l.opts.CapacityPolicy == RejectNewKeys && !l.hasCapacity(now) {
 		return time.Time{}, false, ErrLockoutCapacity
@@ -183,14 +179,14 @@ func (l *MemoryLockout) RecordFailure(ctx context.Context, key string) (time.Tim
 	if l == nil {
 		return time.Time{}, false, ErrLockoutMissing
 	}
-	key, err := memoryLockoutKey(key)
+	hash, err := memoryLockoutKey(key)
 	if err != nil {
 		return time.Time{}, false, err
 	}
-	now := l.now()
+	now := l.opts.Now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	item, exists := l.items[key]
+	item, exists := l.items[hash]
 	if item.locked.After(now) {
 		return item.locked, true, nil
 	}
@@ -204,7 +200,7 @@ func (l *MemoryLockout) RecordFailure(ctx context.Context, key string) (time.Tim
 	if item.failures >= l.opts.MaxFailures {
 		item.locked = now.Add(l.opts.Lockout)
 	}
-	l.items[key] = item
+	l.items[hash] = item
 	return item.locked, !item.locked.IsZero() && item.locked.After(now), nil
 }
 
@@ -217,30 +213,29 @@ func (l *MemoryLockout) Clear(ctx context.Context, key string) error {
 	if l == nil {
 		return ErrLockoutMissing
 	}
-	key, err := memoryLockoutKey(key)
+	hash, err := memoryLockoutKey(key)
 	if err != nil {
 		return err
 	}
 	l.mu.Lock()
-	delete(l.items, key)
+	delete(l.items, hash)
 	l.mu.Unlock()
 	return nil
 }
 
-func memoryLockoutKey(key string) (string, error) {
+func memoryLockoutKey(key string) ([sha256.Size]byte, error) {
 	key = strings.TrimSpace(key)
 	if key == "" {
-		return "", ErrLockoutKeyRequired
+		return [sha256.Size]byte{}, ErrLockoutKeyRequired
 	}
-	sum := sha256.Sum256([]byte(key))
-	return "sha256:" + hex.EncodeToString(sum[:]), nil
+	return sha256.Sum256([]byte(key)), nil
 }
 
 func (l *MemoryLockout) hasCapacity(now time.Time) bool {
 	if len(l.items) < l.opts.MaxKeys {
 		return true
 	}
-	maps.DeleteFunc(l.items, func(_ string, item lockoutItem) bool {
+	maps.DeleteFunc(l.items, func(_ [sha256.Size]byte, item lockoutItem) bool {
 		return l.expired(item, now)
 	})
 	return len(l.items) < l.opts.MaxKeys

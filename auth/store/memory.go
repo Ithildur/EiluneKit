@@ -20,7 +20,6 @@ type MemoryStore struct {
 	userVersions       map[string]int64
 	maxSessionsPerUser int
 	lastPrune          time.Time
-	pruneInterval      time.Duration
 }
 
 var (
@@ -49,7 +48,6 @@ func NewMemoryStoreWithLimit(limit int) *MemoryStore {
 		userSessions:       make(map[string]map[string]struct{}),
 		userVersions:       make(map[string]int64),
 		maxSessionsPerUser: limit,
-		pruneInterval:      time.Minute,
 	}
 }
 
@@ -304,7 +302,7 @@ func (s *MemoryStore) Prune() {
 
 func (s *MemoryStore) pruneExpired(now time.Time, force bool) {
 	s.mu.Lock()
-	if !force && s.pruneInterval > 0 && !s.lastPrune.IsZero() && now.Sub(s.lastPrune) < s.pruneInterval {
+	if !force && now.Sub(s.lastPrune) < time.Minute {
 		s.mu.Unlock()
 		return
 	}

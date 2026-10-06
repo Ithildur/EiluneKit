@@ -78,16 +78,15 @@ func Generate(routeList []routes.Route, opts Options) ([]byte, error) {
 }
 
 type builder struct {
-	routes             []routes.Route
-	doc                *openapi3.T
-	componentNames     map[reflect.Type]string
-	componentTypes     map[string]reflect.Type
-	schemaCache        map[schemaKey]*openapi3.SchemaRef
-	componentJSON      map[string]string
-	securitySchemes    map[string]routes.SecurityScheme
-	operationIDs       map[string]struct{}
-	normalizedRouteKey map[string]struct{}
-	reflector          *jsonschema.Reflector
+	routes          []routes.Route
+	doc             *openapi3.T
+	componentNames  map[reflect.Type]string
+	componentTypes  map[string]reflect.Type
+	schemaCache     map[schemaKey]*openapi3.SchemaRef
+	componentJSON   map[string]string
+	securitySchemes map[string]routes.SecurityScheme
+	operationIDs    map[string]struct{}
+	reflector       *jsonschema.Reflector
 }
 
 type schemaKey struct {
@@ -97,14 +96,13 @@ type schemaKey struct {
 
 func newBuilder(routeList []routes.Route) *builder {
 	b := &builder{
-		routes:             routeList,
-		componentNames:     make(map[reflect.Type]string),
-		componentTypes:     make(map[string]reflect.Type),
-		schemaCache:        make(map[schemaKey]*openapi3.SchemaRef),
-		componentJSON:      make(map[string]string),
-		securitySchemes:    make(map[string]routes.SecurityScheme),
-		operationIDs:       make(map[string]struct{}),
-		normalizedRouteKey: make(map[string]struct{}),
+		routes:          routeList,
+		componentNames:  make(map[reflect.Type]string),
+		componentTypes:  make(map[string]reflect.Type),
+		schemaCache:     make(map[schemaKey]*openapi3.SchemaRef),
+		componentJSON:   make(map[string]string),
+		securitySchemes: make(map[string]routes.SecurityScheme),
+		operationIDs:    make(map[string]struct{}),
 	}
 	b.reflector = &jsonschema.Reflector{
 		Anonymous: true,
@@ -161,11 +159,10 @@ func (b *builder) addRoute(index int, route routes.Route) error {
 	}
 	b.operationIDs[operationID] = struct{}{}
 
-	routeKey := method + " " + path
-	if _, exists := b.normalizedRouteKey[routeKey]; exists {
-		return routeError(index, route, fmt.Errorf("duplicate operation after path normalization: %s", routeKey))
+	pathItem := b.doc.Paths.Value(path)
+	if pathItem != nil && pathItem.GetOperation(method) != nil {
+		return routeError(index, route, fmt.Errorf("duplicate operation after path normalization: %s %s", method, path))
 	}
-	b.normalizedRouteKey[routeKey] = struct{}{}
 
 	security, err := b.buildSecurity(index, route)
 	if err != nil {
@@ -197,7 +194,6 @@ func (b *builder) addRoute(index int, route routes.Route) error {
 		operation.Security = &security
 	}
 
-	pathItem := b.doc.Paths.Value(path)
 	if pathItem == nil {
 		pathItem = &openapi3.PathItem{}
 		b.doc.Paths.Set(path, pathItem)
@@ -520,7 +516,7 @@ func normalizePath(raw string) (string, map[string]struct{}, error) {
 		case '}':
 			return "", nil, fmt.Errorf("unmatched closing brace in path %q", path)
 		case '{':
-			end := pathParamEnd(path, i)
+			end := routepath.ParamEnd(path, i)
 			if end < 0 {
 				return "", nil, fmt.Errorf("unclosed path parameter in %q", path)
 			}
@@ -547,22 +543,6 @@ func normalizePath(raw string) (string, map[string]struct{}, error) {
 		}
 	}
 	return out.String(), params, nil
-}
-
-func pathParamEnd(path string, start int) int {
-	depth := 0
-	for i := start; i < len(path); i++ {
-		switch path[i] {
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return i
-			}
-		}
-	}
-	return -1
 }
 
 func routeError(index int, route routes.Route, err error) error {
@@ -630,9 +610,6 @@ func routeSchemas(route routes.Route) []routes.SchemaRef {
 }
 
 func (b *builder) schema(ref routes.SchemaRef) (*openapi3.SchemaRef, error) {
-	if ref.Type == nil {
-		return nil, fmt.Errorf("schema type is required")
-	}
 	key := schemaKey{name: ref.Name, typeOf: ref.Type}
 	if cached := b.schemaCache[key]; cached != nil {
 		return cached, nil

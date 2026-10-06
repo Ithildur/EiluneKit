@@ -112,12 +112,6 @@ func New(opts Options) *slog.Logger {
 	if writer == nil {
 		writer = os.Stdout
 	}
-	if !isValidLevel(opts.Level) {
-		opts.Level = LevelInfo
-	}
-	if !isValidFormat(opts.Format) {
-		opts.Format = FormatText
-	}
 	if opts.TimeFormat == "" {
 		opts.TimeFormat = defaultTimeFormat
 	}
@@ -143,22 +137,4 @@ func New(opts Options) *slog.Logger {
 	}
 
 	return slog.New(handler)
-}
-
-func isValidLevel(level Level) bool {
-	switch level {
-	case LevelDebug, LevelInfo, LevelWarn, LevelError:
-		return true
-	default:
-		return false
-	}
-}
-
-func isValidFormat(format Format) bool {
-	switch format {
-	case FormatText, FormatJSON:
-		return true
-	default:
-		return false
-	}
 }

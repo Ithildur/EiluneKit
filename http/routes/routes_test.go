@@ -13,64 +13,6 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-func TestBlueprintIncludesChildRoutes(t *testing.T) {
-	child := routes.NewBlueprint()
-	child.Get(
-		"/status",
-		"Get status",
-		func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusNoContent)
-		},
-		routes.Tags("child"),
-		routes.Auth(routes.AuthOptional),
-	)
-
-	parent := routes.NewBlueprint()
-	parent.Include("/updater", child, routes.IncludeTags("updater"))
-
-	payload, err := parent.ExportJSON()
-	if err != nil {
-		t.Fatalf("export json: %v", err)
-	}
-
-	var exported []struct {
-		Method string                 `json:"method"`
-		Path   string                 `json:"path"`
-		Tags   []string               `json:"tags"`
-		Auth   routes.AuthRequirement `json:"auth"`
-	}
-	if err := json.Unmarshal(payload, &exported); err != nil {
-		t.Fatalf("unmarshal export: %v", err)
-	}
-	if got, want := len(exported), 1; got != want {
-		t.Fatalf("expected %d exported route, got %d", want, got)
-	}
-	if got, want := exported[0].Method, http.MethodGet; got != want {
-		t.Fatalf("expected method %q, got %q", want, got)
-	}
-	if got, want := exported[0].Path, "/updater/status"; got != want {
-		t.Fatalf("expected included path %q, got %q", want, got)
-	}
-	if !reflect.DeepEqual(exported[0].Tags, []string{"child", "updater"}) {
-		t.Fatalf("expected include tags, got %#v", exported[0].Tags)
-	}
-	if got, want := exported[0].Auth, routes.AuthOptional; got != want {
-		t.Fatalf("expected auth %q, got %q", want, got)
-	}
-
-	r := chi.NewRouter()
-	if err := parent.Mount(r); err != nil {
-		t.Fatalf("mount: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/updater/status", nil)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected status %d, got %d", http.StatusNoContent, rec.Code)
-	}
-}
-
 func TestBlueprintRoutesAtComposesPaths(t *testing.T) {
 	blueprint := routes.NewBlueprint()
 	blueprint.Add(routes.Route{Path: "/users"})

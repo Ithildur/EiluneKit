@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -44,7 +45,10 @@ type Options struct {
 //
 //	home, _ := appdir.DiscoverHome(appdir.Options{EnvVar: "APP_HOME", Markers: []string{"configs"}})
 func DiscoverHome(opts Options) (string, error) {
-	sources := effectiveSources(opts.Sources)
+	sources := opts.Sources
+	if sources == 0 {
+		sources = defaultSources
+	}
 	if sources&SourceEnvVar != 0 && strings.TrimSpace(opts.EnvVar) != "" {
 		if raw, ok := os.LookupEnv(opts.EnvVar); ok {
 			dir := strings.TrimSpace(raw)
@@ -71,20 +75,17 @@ func DiscoverHome(opts Options) (string, error) {
 
 func collectCandidates(sources CandidateSource) []string {
 	var out []string
-	seen := make(map[string]struct{})
-
 	add := func(p string) {
 		p = filepath.Clean(p)
-		if _, ok := seen[p]; ok {
+		if slices.Contains(out, p) {
 			return
 		}
-		seen[p] = struct{}{}
 		out = append(out, p)
 	}
 
 	if sources&SourceExecutable != 0 {
-		if exe, err := os.Executable(); err == nil && exe != "" {
-			if resolved, resolveErr := filepath.EvalSymlinks(exe); resolveErr == nil && resolved != "" {
+		if exe, err := os.Executable(); err == nil {
+			if resolved, resolveErr := filepath.EvalSymlinks(exe); resolveErr == nil {
 				exe = resolved
 			}
 			exeDir := filepath.Dir(exe)
@@ -96,7 +97,7 @@ func collectCandidates(sources CandidateSource) []string {
 	}
 
 	if sources&SourceWorkingDir != 0 {
-		if wd, err := os.Getwd(); err == nil && wd != "" {
+		if wd, err := os.Getwd(); err == nil {
 			add(wd)
 		}
 	}
@@ -104,17 +105,7 @@ func collectCandidates(sources CandidateSource) []string {
 	return out
 }
 
-func effectiveSources(sources CandidateSource) CandidateSource {
-	if sources == 0 {
-		return defaultSources
-	}
-	return sources
-}
-
 func isHome(dir string, markers []string, requireDir bool) bool {
-	if dir == "" {
-		return false
-	}
 	info, err := os.Stat(dir)
 	if err != nil || !info.IsDir() {
 		return false

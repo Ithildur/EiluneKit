@@ -79,7 +79,7 @@ func NewService(opts ServiceOptions) (*Service, error) {
 // ok 表示凭据是否通过校验。
 func (s *Service) Login(ctx context.Context, req LoginRequest) (Tokens, bool, error) {
 	ctx = contextutil.Require(ctx)
-	if err := s.requireLogin(); err != nil {
+	if err := s.requireTokens(); err != nil {
 		return Tokens{}, false, err
 	}
 	req.Username = strings.TrimSpace(req.Username)
@@ -93,7 +93,7 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (Tokens, bool, er
 		}
 		return Tokens{}, false, nil
 	}
-	if until, locked, err := s.locked(ctx, req.LockoutKey); err != nil {
+	if until, locked, err := s.lockout.Check(ctx, req.LockoutKey); err != nil {
 		if errors.Is(err, ErrLockoutCapacity) {
 			if eventErr := s.emitLoginFailure(ctx, LoginFailure{
 				Username: req.Username, Reason: LoginFailureInvalidCredentials, At: s.now(),
@@ -101,7 +101,7 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (Tokens, bool, er
 				return Tokens{}, false, eventErr
 			}
 		}
-		return Tokens{}, false, err
+		return Tokens{}, false, fmt.Errorf("check login lockout: %w", err)
 	} else if locked {
 		if err := s.emitLoginFailure(ctx, LoginFailure{
 			Username: req.Username,
@@ -145,8 +145,8 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (Tokens, bool, er
 		}
 		return Tokens{}, false, nil
 	}
-	if err := s.clearLockout(ctx, req.LockoutKey); err != nil {
-		return Tokens{}, false, err
+	if err := s.lockout.Clear(ctx, req.LockoutKey); err != nil {
+		return Tokens{}, false, fmt.Errorf("clear login lockout: %w", err)
 	}
 
 	access, accessExp, refresh, refreshExp, err := s.tokens.IssueSessionTokens(ctx, user.ID, IssueOptions{
@@ -294,9 +294,9 @@ func (s *Service) CreateAPIToken(ctx context.Context, req CreateAPITokenRequest)
 	if s == nil {
 		return CreatedAPIToken{}, ErrServiceMisconfigured
 	}
-	ctx, err := requireAPITokenStore(ctx, s.apiTokens)
-	if err != nil {
-		return CreatedAPIToken{}, err
+	ctx = contextutil.Require(ctx)
+	if s.apiTokens == nil {
+		return CreatedAPIToken{}, ErrAPITokenStoreMissing
 	}
 	raw, prefix, hash := createRawAPIToken()
 	token, err := normalizeAPITokenForStore(req, prefix, hash, s.now())
@@ -324,9 +324,9 @@ func (s *Service) DeleteAPIToken(ctx context.Context, id string) (bool, error) {
 	if s == nil {
 		return false, ErrServiceMisconfigured
 	}
-	ctx, err := requireAPITokenStore(ctx, s.apiTokens)
-	if err != nil {
-		return false, err
+	ctx = contextutil.Require(ctx)
+	if s.apiTokens == nil {
+		return false, ErrAPITokenStoreMissing
 	}
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -363,21 +363,6 @@ func (s *Service) principalForClaims(ctx context.Context, claims authjwt.Claims)
 	return user.Principal(), true, nil
 }
 
-func (s *Service) locked(ctx context.Context, key string) (time.Time, bool, error) {
-	until, locked, err := s.lockout.Check(ctx, key)
-	if err != nil {
-		return time.Time{}, false, fmt.Errorf("check login lockout: %w", err)
-	}
-	return until, locked, nil
-}
-
-func (s *Service) clearLockout(ctx context.Context, key string) error {
-	if err := s.lockout.Clear(ctx, key); err != nil {
-		return fmt.Errorf("clear login lockout: %w", err)
-	}
-	return nil
-}
-
 func (s *Service) rejectLogin(ctx context.Context, req LoginRequest, userID, reason string) error {
 	lockedUntil, locked, err := s.lockout.RecordFailure(ctx, req.LockoutKey)
 	if err != nil && !errors.Is(err, ErrLockoutCapacity) {
@@ -405,20 +390,6 @@ func (s *Service) emitLoginFailure(ctx context.Context, event LoginFailure) erro
 		return fmt.Errorf("%w: login failure hook failed: %w", ErrEventFailed, err)
 	}
 	return nil
-}
-
-func (s *Service) requireLogin() error {
-	if err := s.requireTokens(); err != nil {
-		return err
-	}
-	switch {
-	case s.users == nil:
-		return ErrUserStoreMissing
-	case s.passwords == nil:
-		return ErrPasswordVerifierMissing
-	default:
-		return nil
-	}
 }
 
 func (s *Service) requireTokens() error {

@@ -42,14 +42,10 @@ func DecodeJSONBodyWithOptions(r *http.Request, out any, opts JSONOptions) error
 		jsonOpts = append(jsonOpts, json.RejectUnknownMembers(true))
 	}
 	if err := json.UnmarshalRead(r.Body, out, jsonOpts...); err != nil {
-		return normalizeDecodeError(err)
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			return fmt.Errorf("%w: %w", ErrBodyTooLarge, err)
+		}
+		return fmt.Errorf("%w: %w", ErrInvalidJSON, err)
 	}
 	return nil
-}
-
-func normalizeDecodeError(err error) error {
-	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-		return fmt.Errorf("%w: %w", ErrBodyTooLarge, err)
-	}
-	return fmt.Errorf("%w: %w", ErrInvalidJSON, err)
 }
