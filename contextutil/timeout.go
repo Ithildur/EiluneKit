@@ -18,12 +18,10 @@ func Require(ctx context.Context) context.Context {
 	return ctx
 }
 
-// WithTimeout runs fn with context.WithTimeout(parent, d).
-// WithTimeout 使用 context.WithTimeout(parent, d) 运行 fn。
-//
-// Example / 示例:
-//
-//	result, err := contextutil.WithTimeout(ctx, 5*time.Second, func(ctx context.Context) (T, error) { ... })
+// WithTimeout calls fn synchronously with context.WithTimeout(parent, d) and cancels the context when fn finishes.
+// Timeout handling depends on fn observing the context.
+// WithTimeout 使用 context.WithTimeout(parent, d) 同步调用 fn，并在 fn 结束时取消 context。
+// 超时处理依赖 fn 响应 context。
 func WithTimeout[T any](parent context.Context, d time.Duration, fn func(context.Context) (T, error)) (T, error) {
 	ctx, cancel := context.WithTimeout(Require(parent), d)
 	defer cancel()
