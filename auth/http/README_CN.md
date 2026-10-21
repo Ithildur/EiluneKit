@@ -4,6 +4,12 @@
 
 默认 session auth flow 使用这个包，适用于 admin dashboard、internal control plane 和共享密钥应用。登录使用 JSON 凭据和 refresh cookie。
 
+## CAPTCHA
+
+`Options.Captcha` 接受 `captchahttp.Options{Enabled: true, Verify: client.Verify}`，默认关闭。启用后，登录要求 `X-Captcha-Token`，在限流和 Content-Type 检查之后、凭据认证之前验证。缺少验证函数时 handler 构造失败；token 被拒绝、服务商凭据无效或上游故障均拒绝请求。CAPTCHA 失败不会计入密码失败次数或创建 session。刷新、退出和会话管理保持原行为。
+
+启用后的登录契约包含必填请求头及 CAPTCHA 错误响应。构造方法、前端提交和错误语义见 [CAPTCHA 客户端与 HTTP 接入](../../captcha/README_CN.md)。
+
 ## 快速开始
 
 ```go

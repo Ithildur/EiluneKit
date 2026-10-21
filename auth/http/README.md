@@ -4,6 +4,12 @@
 
 This package is for the default session auth flow used by admin dashboards, internal control planes, and shared-secret applications. Login uses JSON credentials and refresh cookies.
 
+## CAPTCHA
+
+`Options.Captcha` accepts `captchahttp.Options{Enabled: true, Verify: client.Verify}`. It defaults to disabled. When enabled, login requires `X-Captcha-Token` and verifies it after rate limiting and Content-Type checks, before credential authentication. Missing verification functions fail handler construction; rejected tokens, invalid provider credentials and upstream failures reject the request. CAPTCHA failures do not count as password failures or create sessions. Refresh, logout and session management are unchanged.
+
+The enabled login contract includes the required header and CAPTCHA error responses. See [CAPTCHA clients and HTTP integration](../../captcha/README.md) for constructors, frontend submission and error semantics.
+
 ## Quick Start
 
 ```go

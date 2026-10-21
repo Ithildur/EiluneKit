@@ -12,6 +12,7 @@ import (
 	authcore "github.com/Ithildur/EiluneKit/auth"
 	authhttp "github.com/Ithildur/EiluneKit/auth/http"
 	corerbac "github.com/Ithildur/EiluneKit/auth/rbac"
+	captchahttp "github.com/Ithildur/EiluneKit/captcha/http"
 	"github.com/Ithildur/EiluneKit/clientip"
 	"github.com/Ithildur/EiluneKit/http/decoder"
 	"github.com/Ithildur/EiluneKit/http/middleware"
@@ -28,6 +29,7 @@ type Handler struct {
 	auth       *corerbac.Service
 	options    Options
 	middleware Middleware
+	captcha    routes.Middleware
 }
 
 type loginRequest struct {
@@ -66,10 +68,15 @@ func NewHandler(service *corerbac.Service, opts Options) (*Handler, error) {
 	if err := routepath.ValidatePrefix(*effective.BasePath); err != nil {
 		return nil, fmt.Errorf("rbac auth: BasePath: %w", err)
 	}
+	captcha, err := captchahttp.New(effective.Captcha)
+	if err != nil {
+		return nil, err
+	}
 	return &Handler{
 		auth:       service,
 		options:    effective,
 		middleware: NewMiddleware(service, effective.RolePolicy),
+		captcha:    captcha,
 	}, nil
 }
 
@@ -130,6 +137,16 @@ func (h *Handler) Routes() []routes.Route {
 		routes.Use(middleware.LimitBody(h.options.MaxBodyBytes)),
 		routes.Use(middleware.RequireJSONBody),
 	)
+	if h.captcha != nil {
+		loginOpts = append(loginOpts,
+			routes.Use(h.captcha),
+			routes.Parameters(routes.Parameter{
+				Name: captchahttp.TokenHeader, In: routes.ParameterHeader, Required: true,
+				Schema: routes.SchemaOf[string](""),
+			}),
+		)
+		loginOpts = addErrorResponses(loginOpts, http.StatusForbidden)
+	}
 	authRoutes.Post(
 		"/login",
 		"Login",

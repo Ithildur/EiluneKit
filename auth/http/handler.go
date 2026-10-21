@@ -13,6 +13,7 @@ import (
 	"github.com/Ithildur/EiluneKit/auth"
 	authjwt "github.com/Ithildur/EiluneKit/auth/jwt"
 	authsession "github.com/Ithildur/EiluneKit/auth/session"
+	captchahttp "github.com/Ithildur/EiluneKit/captcha/http"
 	"github.com/Ithildur/EiluneKit/clientip"
 	"github.com/Ithildur/EiluneKit/http/decoder"
 	"github.com/Ithildur/EiluneKit/http/middleware"
@@ -29,6 +30,7 @@ type Handler struct {
 	service *auth.Service
 	options Options
 	bearer  routes.Middleware
+	captcha routes.Middleware
 }
 
 const errAuthMisconfiguredCode = "auth_misconfigured"
@@ -47,6 +49,10 @@ func NewHandler(manager TokenManager, opts Options) (*Handler, error) {
 	if err := routepath.ValidatePrefix(*effective.BasePath); err != nil {
 		return nil, fmt.Errorf("authhttp: BasePath: %w", err)
 	}
+	captcha, err := captchahttp.New(effective.Captcha)
+	if err != nil {
+		return nil, err
+	}
 	service, err := auth.New(manager, effective.LoginAuthenticator)
 	if err != nil {
 		return nil, err
@@ -60,6 +66,7 @@ func NewHandler(manager TokenManager, opts Options) (*Handler, error) {
 		service: service,
 		options: effective,
 		bearer:  bearer,
+		captcha: captcha,
 	}, nil
 }
 
@@ -125,6 +132,16 @@ func (h *Handler) Routes() []routes.Route {
 		routes.Use(loginChain...),
 		routes.Use(middleware.RequireJSONBody),
 	)
+	if h.captcha != nil {
+		loginOpts = append(loginOpts,
+			routes.Use(h.captcha),
+			routes.Parameters(routes.Parameter{
+				Name: captchahttp.TokenHeader, In: routes.ParameterHeader, Required: true,
+				Schema: routes.SchemaOf[string](""),
+			}),
+		)
+		loginOpts = addErrorResponses(loginOpts, stdhttp.StatusForbidden)
+	}
 	authRoutes.Post(
 		"/login",
 		"Login",

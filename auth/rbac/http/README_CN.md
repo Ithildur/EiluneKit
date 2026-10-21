@@ -4,6 +4,8 @@
 
 它用于需要多用户、角色检查、scope 检查或 opaque API token 的应用。认证流程由 `auth/rbac` 负责；用户存储、密码 hash、角色分配和 token 持久化由应用负责。
 
+`Options.Captcha` 可通过 `captchahttp.Options{Enabled: true, Verify: client.Verify}` 保护登录，默认关闭。启用后要求 `X-Captcha-Token`；验证在限流和 Content-Type 检查之后、凭据认证之前执行。缺少验证函数时 handler 构造失败。验证失败不会降级为无保护登录，也不会计入密码失败次数或创建 session。刷新、退出和当前用户路由保持原行为。启用后的登录契约包含请求头及 CAPTCHA 错误响应。详见 [CAPTCHA 客户端与 HTTP 接入](../../../captcha/README_CN.md)。
+
 默认 HTTP 路径：
 
 | 路由 | 用途 |

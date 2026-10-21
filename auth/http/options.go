@@ -10,6 +10,7 @@ import (
 
 	authcore "github.com/Ithildur/EiluneKit/auth"
 	authsession "github.com/Ithildur/EiluneKit/auth/session"
+	captchahttp "github.com/Ithildur/EiluneKit/captcha/http"
 )
 
 const defaultMaxBodyBytes int64 = 1 << 20
@@ -58,6 +59,9 @@ type Options struct {
 	// RateLimit configures login rate limiting.
 	// RateLimit 配置登录限流。
 	RateLimit *RateLimitOptions
+	// Captcha optionally verifies login requests before credential authentication.
+	// Captcha 可选地在凭据认证前验证登录请求。
+	Captcha captchahttp.Options
 	// LoginLockout records failed logins and locks its key after too many failures.
 	// LoginLockout 记录登录失败，并在失败过多后锁定对应 key。
 	LoginLockout authcore.Lockout
@@ -92,6 +96,7 @@ func DefaultOptions() Options {
 }
 
 func applyOptions(base, override Options) Options {
+	base.Captcha = override.Captcha
 	if override.LoginAuthenticator != nil {
 		base.LoginAuthenticator = override.LoginAuthenticator
 	}

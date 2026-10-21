@@ -85,6 +85,8 @@ redisStore := redissession.NewWithLimit(client, redissession.Options{}, 0)
 - `auth/session`：cookie 与 CSRF 辅助
 - `auth/store`：session / token 状态接口与 memory store
 - `auth/store/redissession`：Redis 版认证 session store
+- [`captcha`](captcha/README_CN.md)：Cap、Turnstile 和 reCAPTCHA token 验证
+- `captcha/http`：可选 CAPTCHA 中间件及内置登录保护
 - `http/decoder`：JSON 请求解码辅助
 - `http/middleware`：请求 ID、恢复、CORS、压缩、RequireJSONBody、访问日志和限制
 - `http/response`：JSON 写入函数和可选错误 handler

@@ -85,6 +85,8 @@ Start with the package docs:
 - `auth/session`: cookie and CSRF helpers
 - `auth/store`: session and token state interfaces and memory store
 - `auth/store/redissession`: Redis-backed auth session store
+- [`captcha`](captcha/README.md): Cap, Turnstile and reCAPTCHA token verification
+- `captcha/http`: optional CAPTCHA middleware and built-in login protection
 - `http/decoder`: JSON request decoding helpers
 - `http/middleware`: request IDs, recovery, CORS, compression, JSON-only guards, access logging, and limits
 - `http/response`: JSON writers and optional error handlers

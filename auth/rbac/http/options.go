@@ -6,6 +6,7 @@ import (
 
 	authhttp "github.com/Ithildur/EiluneKit/auth/http"
 	corerbac "github.com/Ithildur/EiluneKit/auth/rbac"
+	captchahttp "github.com/Ithildur/EiluneKit/captcha/http"
 )
 
 const defaultAuthBasePath = "/auth"
@@ -34,6 +35,9 @@ type Options struct {
 	// 设置 Disabled 可改用应用自己的限流器。
 	RateLimit  *RateLimitOptions
 	RolePolicy corerbac.RolePolicy
+	// Captcha optionally verifies login requests before credential authentication.
+	// Captcha 可选地在凭据认证前验证登录请求。
+	Captcha captchahttp.Options
 }
 
 // DefaultOptions returns default handler options.
@@ -47,6 +51,7 @@ func DefaultOptions() Options {
 }
 
 func applyOptions(base, override Options) Options {
+	base.Captcha = override.Captcha
 	if override.BasePath != nil {
 		base.BasePath = new(*override.BasePath)
 	}

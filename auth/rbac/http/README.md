@@ -4,6 +4,8 @@
 
 Use it for applications that need multiple users, role checks, scope checks, or opaque API tokens. `auth/rbac` owns the authentication flow; the application owns user storage, password hashing, role assignment, and token persistence.
 
+`Options.Captcha` optionally protects login with `captchahttp.Options{Enabled: true, Verify: client.Verify}`. It defaults to disabled. When enabled, `X-Captcha-Token` is required; verification runs after rate limiting and Content-Type checks, before credential authentication. A missing verifier fails handler construction. Failed verification never falls back to an unprotected login and does not count as a password failure or create sessions. Refresh, logout and current-user routes remain unchanged. Enabled login contracts include the header and CAPTCHA error responses. See [CAPTCHA clients and HTTP integration](../../../captcha/README.md).
+
 Default HTTP paths:
 
 | Route | Purpose |
