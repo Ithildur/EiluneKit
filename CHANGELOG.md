@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.4.5 - 2026-10-21
+
+### Breaking
+
+- Minimum Go version is now Go 1.27.3. Upgrade development and CI toolchains to Go 1.27.3 or newer.
+
+### Added
+
+- Added `captcha` clients for Cap Standalone, Cloudflare Turnstile and Google reCAPTCHA v2/v3, with bounded verification requests and provider-specific hostname, action and score checks.
+- Added `captcha/http` middleware and optional `Options.Captcha` integration in both auth HTTP handlers. CAPTCHA is disabled by default; enabling it requires a verifier and protects login before credential authentication. Rejected tokens, invalid credentials for the CAPTCHA provider and upstream failures never bypass verification. Enabled login contracts declare the required `X-Captcha-Token` header and CAPTCHA failure responses.
+
+### Changed
+
+- Updated Chi to v5.5.0, httprate to v0.16.1, kin-openapi to v0.151.0, klauspost/compress to v1.20.3, Goose to v3.29.0, and go-redis to v9.23.0.
+
 ## v0.4.4 - 2026-10-05
 
 ### Breaking
