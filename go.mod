@@ -1,6 +1,6 @@
 module github.com/Ithildur/EiluneKit
 
-go 1.27.1
+go 1.27.3
 
 require (
 	github.com/felixge/httpsnoop v1.1.0
