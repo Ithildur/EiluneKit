@@ -4,7 +4,7 @@ go 1.27.3
 
 require (
 	github.com/felixge/httpsnoop v1.1.0
-	github.com/getkin/kin-openapi v0.151.0
+	github.com/getkin/kin-openapi v0.152.0
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/go-chi/httprate v0.16.1
 	github.com/golang-jwt/jwt/v5 v5.3.1
