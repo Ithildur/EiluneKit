@@ -253,6 +253,9 @@ func (h *Handler) Routes() []routes.Route {
 	)
 	authRoutes.Include("/sessions", sessions)
 
+	if opts.Passkeys != nil {
+		authRoutes.Add(h.passkeyRoutes(rateLimitOpts)...)
+	}
 	return authRoutes.RoutesAt(*opts.BasePath)
 }
 
@@ -305,9 +308,13 @@ func (h *Handler) handleLogin(w stdhttp.ResponseWriter, r *stdhttp.Request) {
 		writeAuthFailure(w, err)
 		return
 	}
+	h.completeLogin(w, r, tokens, req.Username, sessionOnly)
+}
+
+func (h *Handler) completeLogin(w stdhttp.ResponseWriter, r *stdhttp.Request, tokens auth.Tokens, username string, sessionOnly bool) {
 	if err := h.options.Events.handleLogin(r.Context(), LoginEvent{
 		UserID:           tokens.UserID,
-		Username:         req.Username,
+		Username:         username,
 		SessionOnly:      sessionOnly,
 		AccessExpiresAt:  tokens.AccessExpiresAt,
 		RefreshExpiresAt: tokens.RefreshExpiresAt,

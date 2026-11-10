@@ -4,6 +4,8 @@
 
 EiluneKit 是一组小型 Go 工具包，覆盖认证、HTTP 服务、Postgres、Redis、日志和少量运行时辅助。按需导入包；这里没有中心化框架。
 
+[`auth/passkey`](auth/passkey/README_CN.md) 提供可选 WebAuthn 注册与登录，协商 ML-DSA-44 / ES256，并按需复用普通 auth 或 RBAC 会话。
+
 ## 安装
 
 ```bash

@@ -18,7 +18,9 @@ type Events struct {
 }
 
 // LoginEvent describes a successful login before the response is written.
+// Username is empty for passkey login; UserID identifies the account.
 // LoginEvent 描述响应写出前的一次成功登录。
+// 通行密钥登录时 Username 为空；UserID 标识账户。
 type LoginEvent struct {
 	UserID           string
 	Username         string

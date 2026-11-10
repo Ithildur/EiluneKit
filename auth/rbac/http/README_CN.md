@@ -1,5 +1,7 @@
 # auth/rbac/http
 
+配置 `Options.Passkeys` 可启用 WebAuthn 注册、登录及凭据管理，继续返回现有 RBAC Token 响应并使用当前用户权限。CAPTCHA 仅用于密码登录。详见[通行密钥](../../passkey/README_CN.md)。
+
 `auth/rbac/http` 将 `auth/rbac.Service` 适配为 JSON bearer 路由。
 
 它用于需要多用户、角色检查、scope 检查或 opaque API token 的应用。认证流程由 `auth/rbac` 负责；用户存储、密码 hash、角色分配和 token 持久化由应用负责。

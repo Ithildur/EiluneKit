@@ -1,5 +1,7 @@
 # auth/rbac/http
 
+Set `Options.Passkeys` to enable WebAuthn registration, login and credential management with the existing RBAC token response and current user permissions. CAPTCHA applies only to password login. See [Passkeys](../../passkey/README.md).
+
 `auth/rbac/http` adapts `auth/rbac.Service` to JSON bearer routes.
 
 Use it for applications that need multiple users, role checks, scope checks, or opaque API tokens. `auth/rbac` owns the authentication flow; the application owns user storage, password hashing, role assignment, and token persistence.

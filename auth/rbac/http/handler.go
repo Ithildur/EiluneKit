@@ -214,6 +214,9 @@ func (h *Handler) Routes() []routes.Route {
 		meOpts...,
 	)
 
+	if h.options.Passkeys != nil {
+		authRoutes.Add(h.passkeyRoutes()...)
+	}
 	return authRoutes.RoutesAt(*h.options.BasePath)
 }
 

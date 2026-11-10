@@ -4,6 +4,8 @@
 
 This package is for the default session auth flow used by admin dashboards, internal control planes, and shared-secret applications. Login uses JSON credentials and refresh cookies.
 
+Set `Options.Passkeys` to enable WebAuthn registration, login and credential management while retaining the existing cookies and login events. CAPTCHA applies only to password login. See [Passkeys](../passkey/README.md).
+
 ## CAPTCHA
 
 `Options.Captcha` accepts `captchahttp.Options{Enabled: true, Verify: client.Verify}`. It defaults to disabled. When enabled, login requires `X-Captcha-Token` and verifies it after rate limiting and Content-Type checks, before credential authentication. Missing verification functions fail handler construction; rejected tokens, invalid provider credentials and upstream failures reject the request. CAPTCHA failures do not count as password failures or create sessions. Refresh, logout and session management are unchanged.

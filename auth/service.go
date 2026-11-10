@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/Ithildur/EiluneKit/auth/passkey"
 	"github.com/Ithildur/EiluneKit/contextutil"
 )
 
@@ -68,6 +69,30 @@ func (s *Service) Login(ctx context.Context, username, password string, opts Iss
 		return Tokens{}, false, ErrUserIDInvalid
 	}
 
+	return s.issueTokens(ctx, userID, opts)
+}
+
+// LoginPasskey verifies a single-use assertion and issues the existing session tokens.
+// The boolean reports the server-bound session-only preference, not acceptance.
+// LoginPasskey 验证一次性断言并签发现有会话 token。
+// 布尔值表示服务端绑定的仅会话偏好，不表示是否接受认证。
+func (s *Service) LoginPasskey(ctx context.Context, keys *passkey.Service, flowID string, response []byte) (tokens Tokens, sessionOnly bool, err error) {
+	ctx = contextutil.Require(ctx)
+	if err := s.requireAuth(); err != nil {
+		return Tokens{}, false, err
+	}
+	if keys == nil {
+		return Tokens{}, false, ErrServiceMisconfigured
+	}
+	result, err := keys.FinishLogin(ctx, flowID, response)
+	if err != nil {
+		return Tokens{}, false, err
+	}
+	tokens, _, err = s.issueTokens(ctx, result.User.ID, IssueOptions{SessionOnly: result.SessionOnly})
+	return tokens, result.SessionOnly, err
+}
+
+func (s *Service) issueTokens(ctx context.Context, userID string, opts IssueOptions) (Tokens, bool, error) {
 	access, accessExp, refresh, refreshExp, err := s.auth.IssueSessionTokens(ctx, userID, opts)
 	if err != nil {
 		return Tokens{}, false, err

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.6 - 2026-11-10
+
+### Added
+
+- Added optional `auth/passkey` WebAuthn registration, username-less login and credential management, with ML-DSA-44 preferred and ES256 accepted. Credentials retain their registered algorithm; this is not a hybrid signature or a guarantee of provider-specific post-quantum support.
+- Both auth HTTP adapters accept `Options.Passkeys` and expose a single `/passkey` ceremony endpoint plus `/passkeys` management routes. Successful passkey login uses the existing cookie or RBAC token response and login events; existing password APIs, JWT and session formats remain unchanged. Plain auth login events use an empty username and the verified user ID for passkey login.
+- Added single-use flow stores in memory (with a capacity limit) and Redis, an application-owned credential store contract, and browser/PostgreSQL examples. Credential deletion prevents future use without revoking established sessions.
+
 ## v0.4.5 - 2026-10-21
 
 ### Breaking

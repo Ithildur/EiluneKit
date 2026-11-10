@@ -9,6 +9,7 @@ import (
 
 	authcore "github.com/Ithildur/EiluneKit/auth"
 	authjwt "github.com/Ithildur/EiluneKit/auth/jwt"
+	"github.com/Ithildur/EiluneKit/auth/passkey"
 	"github.com/Ithildur/EiluneKit/contextutil"
 )
 
@@ -149,8 +150,52 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (Tokens, bool, er
 		return Tokens{}, false, fmt.Errorf("clear login lockout: %w", err)
 	}
 
+	return s.issueTokens(ctx, user, req.SessionOnly)
+}
+
+// PasskeyUser loads an active account for passkey.Options.LookupUser.
+// PasskeyUser 为 passkey.Options.LookupUser 加载有效账户。
+func (s *Service) PasskeyUser(ctx context.Context, id string) (passkey.User, bool, error) {
+	u, ok, err := s.users.GetUser(ctx, id)
+	if err != nil || !ok || u.Disabled {
+		return passkey.User{}, false, err
+	}
+	return passkey.User{ID: u.ID, Name: u.Username, DisplayName: u.Username}, true, nil
+}
+
+// LoginPasskey verifies an assertion and reloads the current user before issuing
+// tokens and running the existing login event. It does not verify a password.
+// The boolean reports whether login was accepted.
+// LoginPasskey 验证断言后重新加载当前用户，再签发 token 并执行现有登录事件，不验证密码。
+// 布尔值表示登录是否被接受。
+func (s *Service) LoginPasskey(ctx context.Context, keys *passkey.Service, flowID string, response []byte) (Tokens, bool, error) {
+	ctx = contextutil.Require(ctx)
+	if err := s.requireTokens(); err != nil {
+		return Tokens{}, false, err
+	}
+	if keys == nil {
+		return Tokens{}, false, ErrServiceMisconfigured
+	}
+	result, err := keys.FinishLogin(ctx, flowID, response)
+	if err != nil {
+		return Tokens{}, false, err
+	}
+	user, ok, err := s.users.GetUser(ctx, result.User.ID)
+	if err != nil {
+		return Tokens{}, false, fmt.Errorf("load passkey user: %w", err)
+	}
+	if !ok || user.Disabled {
+		return Tokens{}, false, nil
+	}
+	if user.ID != result.User.ID {
+		return Tokens{}, false, ErrUserIDInvalid
+	}
+	return s.issueTokens(ctx, user, result.SessionOnly)
+}
+
+func (s *Service) issueTokens(ctx context.Context, user User, sessionOnly bool) (Tokens, bool, error) {
 	access, accessExp, refresh, refreshExp, err := s.tokens.IssueSessionTokens(ctx, user.ID, IssueOptions{
-		SessionOnly: req.SessionOnly,
+		SessionOnly: sessionOnly,
 	})
 	if err != nil {
 		return Tokens{}, false, fmt.Errorf("issue session tokens: %w", err)
@@ -170,7 +215,7 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (Tokens, bool, er
 		AccessExpiresAt:  accessExp,
 		RefreshToken:     refresh,
 		RefreshExpiresAt: refreshExp,
-		SessionOnly:      req.SessionOnly,
+		SessionOnly:      sessionOnly,
 	}, true, nil
 }
 

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	authcore "github.com/Ithildur/EiluneKit/auth"
+	"github.com/Ithildur/EiluneKit/auth/passkey"
 	authsession "github.com/Ithildur/EiluneKit/auth/session"
 	captchahttp "github.com/Ithildur/EiluneKit/captcha/http"
 )
@@ -19,6 +20,9 @@ const defaultAuthBasePath = "/auth"
 // Options configures NewHandler.
 // Options 配置 NewHandler。
 type Options struct {
+	// Passkeys enables optional WebAuthn routes using the existing session cookies.
+	// Passkeys 启用可选 WebAuthn 路由，使用现有会话 cookie。
+	Passkeys *passkey.Service
 	// LoginAuthenticator validates login credentials.
 	// LoginAuthenticator 校验登录凭据。
 	LoginAuthenticator LoginAuthenticator
@@ -53,14 +57,14 @@ type Options struct {
 	// Nil 使用默认顺序；非 nil 空切片禁用客户端 IP 头。
 	ClientIPHeaders []string
 
-	// MaxBodyBytes limits the login body size.
-	// MaxBodyBytes 限制登录请求体大小。
+	// MaxBodyBytes limits password login and passkey request bodies.
+	// MaxBodyBytes 限制密码登录及通行密钥请求体大小。
 	MaxBodyBytes int64
-	// RateLimit configures login rate limiting.
-	// RateLimit 配置登录限流。
+	// RateLimit configures separate limiters for password login and passkey ceremonies.
+	// RateLimit 分别配置密码登录和通行密钥流程的限流器。
 	RateLimit *RateLimitOptions
-	// Captcha optionally verifies login requests before credential authentication.
-	// Captcha 可选地在凭据认证前验证登录请求。
+	// Captcha optionally verifies password login requests before credential authentication.
+	// Captcha 可选地在凭据认证前验证密码登录请求。
 	Captcha captchahttp.Options
 	// LoginLockout records failed logins and locks its key after too many failures.
 	// LoginLockout 记录登录失败，并在失败过多后锁定对应 key。
@@ -96,6 +100,7 @@ func DefaultOptions() Options {
 }
 
 func applyOptions(base, override Options) Options {
+	base.Passkeys = override.Passkeys
 	base.Captcha = override.Captcha
 	if override.LoginAuthenticator != nil {
 		base.LoginAuthenticator = override.LoginAuthenticator

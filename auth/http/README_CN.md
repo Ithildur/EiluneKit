@@ -4,6 +4,8 @@
 
 默认 session auth flow 使用这个包，适用于 admin dashboard、internal control plane 和共享密钥应用。登录使用 JSON 凭据和 refresh cookie。
 
+配置 `Options.Passkeys` 可启用 WebAuthn 注册、登录及凭据管理，继续使用现有 Cookie 和登录事件。CAPTCHA 仅用于密码登录。详见[通行密钥](../passkey/README_CN.md)。
+
 ## CAPTCHA
 
 `Options.Captcha` 接受 `captchahttp.Options{Enabled: true, Verify: client.Verify}`，默认关闭。启用后，登录要求 `X-Captcha-Token`，在限流和 Content-Type 检查之后、凭据认证之前验证。缺少验证函数时 handler 构造失败；token 被拒绝、服务商凭据无效或上游故障均拒绝请求。CAPTCHA 失败不会计入密码失败次数或创建 session。刷新、退出和会话管理保持原行为。

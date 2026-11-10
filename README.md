@@ -15,6 +15,7 @@ Requires Go 1.27.3 or newer.
 ## Design
 
 - `auth` owns shared principal helpers and transport-neutral auth flows. `auth/http` adapts the default session auth flow to HTTP; `auth/rbac` and `auth/rbac/http` handle multi-user JSON bearer auth.
+- [`auth/passkey`](auth/passkey/README.md) adds optional WebAuthn registration and login with ML-DSA-44/ES256 negotiation, reusing either auth session integration.
 - `http/routes` keeps route metadata next to handlers. `Route` is the data model; `Blueprint` is the recommended builder. `NewHandler` builds a complete HTTP handler with application-supplied middleware and failure responses.
 - Built-in auth is optional. Applications can use their own middleware, principals, sessions, and login routes; see [application authentication](http/routes/README.md#application-authentication).
 - `tools/openapi` optionally turns final route metadata into validated OpenAPI 3.1 JSON. Handlers remain ordinary `net/http` handlers without runtime schema validation.
