@@ -1,10 +1,11 @@
 # Changelog
 
-## v0.4.6 - 2026-11-10
+## v0.4.6 - 2026-11-22
 
 ### Breaking
 
 - pgx v5.12.0 adds `Tx` to `pgx.BatchResults`. Applications with custom implementations or mocks of that upstream interface must add the method.
+- pgx v5.13.0 moves file-backed TLS client certificates configured through `sslcert` and `sslkey` out of `TLSConfig.Certificates` and reloads them on each TLS client certificate request. Use `pgconn.Config.Copy` to preserve automatic reloading when copying the connection configuration.
 
 ### Added
 
@@ -14,12 +15,14 @@
 
 ### Changed
 
-- Lowered the minimum Go version from 1.27.3 to 1.27.
-- Updated pgx to v5.12.0, klauspost/compress to v1.20.4, kin-openapi to v0.153.0, Goose to v3.30.0, CBOR to v2.10.0, and YAML v4 to its stable v4.0.0 release.
+- Lowered the minimum Go version from 1.27.3 to 1.27. Use Go 1.27.4 or newer for production builds to include the standard library security fixes available at release time.
+- Updated pgx to v5.13.0, klauspost/compress to v1.20.4, kin-openapi to v0.153.0, Goose to v3.30.1, CBOR to v2.10.0, and YAML v4 to its stable v4.0.0 release.
+- Goose migrations with `ENVSUB ON` support more shell expansions. Goose v3.30.1 also builds with `interpolate` v0.2.0.
 
 ### Security
 
-- Updated pgx to fix SQL injection in simple-protocol batches and enforcement of `require_auth` and `channel_binding=require` during connection startup.
+- pgx v5.12.0 fixes SQL injection in simple-protocol batches and enforces `require_auth` and `channel_binding=require` during connection startup. [GHSA-j38q-h3ph-jjpq](https://github.com/jackc/pgx/security/advisories/GHSA-j38q-h3ph-jjpq), [GHSA-95fj-3fxw-g62g](https://github.com/jackc/pgx/security/advisories/GHSA-95fj-3fxw-g62g)
+- pgx v5.13.0 fixes a panic in `Rows.Values` on malformed server responses. [GHSA-w9rp-vfrh-q8vv](https://github.com/jackc/pgx/security/advisories/GHSA-w9rp-vfrh-q8vv)
 
 ## v0.4.5 - 2026-10-21
 
